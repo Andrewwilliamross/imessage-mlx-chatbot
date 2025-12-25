@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+*.tmp
+
+# MLX model cache (downloaded models)
+~/.cache/huggingface/
+
+# Claude Code
+.claude/
+
+# PM2
+.pm2/
+
+# Python
+*.egg-info/
+.eggs/
+*.egg

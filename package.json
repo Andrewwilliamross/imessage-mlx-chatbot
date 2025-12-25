@@ -1,0 +1,53 @@
+{
+  "name": "imessage-mlx-chatbot",
+  "version": "1.0.0",
+  "description": "iMessage chatbot powered by MLX-LM local LLM inference on Apple Silicon",
+  "main": "dist/chatbot-main.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && mkdir -p dist/applescript && cp src/applescript/*.applescript dist/applescript/",
+    "type-check": "tsc --noEmit",
+    "start": "NODE_ENV=production node dist/chatbot-main.js",
+    "dev": "NODE_ENV=development LOG_LEVEL=debug node dist/chatbot-main.js",
+    "watch": "tsc --watch",
+    "test": "echo 'Tests not yet implemented'",
+    "test:mlx": "curl -s http://localhost:8000/health | json_pp",
+    "test:e2e": "./scripts/test-e2e.sh",
+    "logs": "tail -f logs/chatbot-out.log",
+    "clean": "rm -rf logs/* dist",
+    "health": "curl -s http://localhost:8000/health && curl -s http://localhost:8000/stats"
+  },
+  "keywords": [
+    "imessage",
+    "chatbot",
+    "mlx",
+    "llm",
+    "apple-silicon",
+    "ai-assistant",
+    "local-llm"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.958.0",
+    "@aws-sdk/s3-request-presigner": "^3.958.0",
+    "better-sqlite3": "^11.7.0",
+    "chokidar": "^4.0.3",
+    "dotenv": "^16.3.1",
+    "mime-types": "^3.0.1",
+    "node-fetch": "^3.3.2",
+    "redis": "^4.6.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^20.10.4",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "darwin"
+  ]
+}
