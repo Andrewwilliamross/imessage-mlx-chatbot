@@ -15,193 +15,410 @@ This separation enables rich, context-aware daily content (real Nashville events
 
 ## Architecture Overview
 
+### Unified Entry Point Design
+
+The Gift System integrates with the existing chatbot infrastructure rather than creating parallel services. This reduces complexity, prevents race conditions on `chat.db`, and maximizes code reuse.
+
 ```
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│                     FAMILY DAILY GIFT SYSTEM - DUAL MODEL ARCHITECTURE             │
-│                                                                                    │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
-│  │                        PROACTIVE DAILY MESSAGES                              │  │
-│  │                         (Scheduled, Tool-Enabled)                            │  │
-│  │                                                                              │  │
-│  │   ┌─────────────┐      ┌───────────────────────────────────────────────┐   │  │
-│  │   │  Scheduler  │──────│              OpenRouter API                   │   │  │
-│  │   │  (node-     │      │  ┌─────────────┐  ┌──────────────────────┐   │   │  │
-│  │   │  schedule)  │      │  │ Web Search  │  │  Image Generation    │   │   │  │
-│  │   │             │      │  │ (Exa/Tavily)│  │  (Flux/DALL-E)       │   │   │  │
-│  │   │  6:30 AM    │      │  └─────────────┘  └──────────────────────┘   │   │  │
-│  │   │  7:00 AM    │      │  ┌─────────────────────────────────────────┐ │   │  │
-│  │   │  7:30 AM    │      │  │  LLM w/ Tools (Claude/GPT-4)            │ │   │  │
-│  │   │  8:00 AM    │      │  │  - Crafts personalized messages         │ │   │  │
-│  │   └──────┬──────┘      │  │  - Invokes web search for real data     │ │   │  │
-│  │          │             │  │  - Generates image prompts              │ │   │  │
-│  │          │             │  └─────────────────────────────────────────┘ │   │  │
-│  │          │             └────────────────────┬──────────────────────────┘   │  │
-│  │          │                                  │                              │  │
-│  │          │                                  ▼                              │  │
-│  │          │             ┌───────────────────────────────────────────────┐   │  │
-│  │          │             │          Generated Content                    │   │  │
-│  │          │             │  • Personalized text message                  │   │  │
-│  │          │             │  • AI-generated image (optional)              │   │  │
-│  │          │             │  • Real-time data (events, recipes, verses)   │   │  │
-│  │          │             └────────────────────┬──────────────────────────┘   │  │
-│  │          │                                  │                              │  │
-│  │          └──────────────────────────────────┼──────────────────────────────┘  │
-│  │                                             │                                  │
-│  │                                             ▼                                  │
-│  │                      ┌───────────────────────────────────────────┐            │
-│  │                      │        MessageService (AppleScript)       │            │
-│  │                      │   • sendMessage(phone, text)              │            │
-│  │                      │   • sendMediaMessage(phone, text, image)  │            │
-│  │                      └───────────────────────────────────────────┘            │
-│  │                                                                                │
-│  └────────────────────────────────────────────────────────────────────────────────┘
-│                                                                                    │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
-│  │                          REPLY HANDLING                                      │  │
-│  │                     (Reactive, Fast, Private)                                │  │
-│  │                                                                              │  │
-│  │   ┌─────────────┐      ┌───────────────────────────────────────────────┐   │  │
-│  │   │ MessageSync │──────│           Local MLX-LM API                    │   │  │
-│  │   │ (chat.db    │      │  ┌─────────────────────────────────────────┐ │   │  │
-│  │   │  polling)   │      │  │   Llama-3.2-3B-Instruct-4bit            │ │   │  │
-│  │   │             │      │  │   • Fast inference (~1-3s)              │ │   │  │
-│  │   │  Family     │      │  │   • Maintains conversation context      │ │   │  │
-│  │   │  member     │      │  │   • Personality-aware system prompts    │ │   │  │
-│  │   │  replies    │      │  │   • 100% local, no API costs            │ │   │  │
-│  │   └──────┬──────┘      │  └─────────────────────────────────────────┘ │   │  │
-│  │          │             └────────────────────┬──────────────────────────┘   │  │
-│  │          │                                  │                              │  │
-│  │          │                                  ▼                              │  │
-│  │          │             ┌───────────────────────────────────────────────┐   │  │
-│  │          │             │        MessageService (AppleScript)           │   │  │
-│  │          │             │        Reply sent to family member            │   │  │
-│  │          │             └───────────────────────────────────────────────┘   │  │
-│  │          │                                                                 │  │
-│  └──────────┴─────────────────────────────────────────────────────────────────┘  │
-│                                                                                    │
-└────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│                    UNIFIED iMESSAGE AI SYSTEM                                       │
+│                                                                                     │
+│  ┌──────────────────────────────────────────────────────────────────────────────┐  │
+│  │                           src/main.ts                                         │  │
+│  │                      (Unified Entry Point)                                    │  │
+│  │                                                                               │  │
+│  │   if (CHATBOT_ENABLED)  ───────►  ChatbotHandler (existing)                  │  │
+│  │   if (GIFT_SYSTEM_ENABLED) ────►  GiftScheduler (new)                        │  │
+│  └──────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                     │
+│  ┌─────────────────────────────────┐    ┌────────────────────────────────────────┐ │
+│  │     PROACTIVE DAILY MESSAGES    │    │         REPLY HANDLING                 │ │
+│  │     (Scheduled, Tool-Enabled)   │    │     (Reactive, Fast, Private)          │ │
+│  │                                 │    │                                        │ │
+│  │  ┌───────────────────────────┐  │    │  ┌──────────────────────────────────┐  │ │
+│  │  │     GiftScheduler         │  │    │  │   ChatbotHandler (extended)      │  │ │
+│  │  │   (node-schedule)         │  │    │  │                                  │  │ │
+│  │  │                           │  │    │  │   • detectFamilyMember()         │  │ │
+│  │  │   6:30 AM → Dad           │  │    │  │   • getFamilySystemPrompt()      │  │ │
+│  │  │   7:00 AM → Mom           │  │    │  │   • Route to MLX with context    │  │ │
+│  │  │   7:30 AM → Brother       │  │    │  │                                  │  │ │
+│  │  │   8:00 AM → Sister (PT)   │  │    │  └────────────────┬─────────────────┘  │ │
+│  │  └───────────┬───────────────┘  │    │                   │                    │ │
+│  │              │                  │    │                   ▼                    │ │
+│  │              ▼                  │    │  ┌──────────────────────────────────┐  │ │
+│  │  ┌───────────────────────────┐  │    │  │      Local MLX-LM API            │  │ │
+│  │  │   ProactiveGenerator      │  │    │  │   Llama-3.2-3B-Instruct-4bit     │  │ │
+│  │  │                           │  │    │  │   • Fast (~1-3s)                 │  │ │
+│  │  │  ┌─────────────────────┐  │  │    │  │   • Free                         │  │ │
+│  │  │  │  OpenRouter API     │  │  │    │  │   • Private                      │  │ │
+│  │  │  │  (Claude/GPT-4)     │  │  │    │  └──────────────────────────────────┘  │ │
+│  │  │  │                     │  │  │    │                                        │ │
+│  │  │  │  Tools:             │  │  │    └────────────────────────────────────────┘ │
+│  │  │  │  • web_search       │  │  │                                               │
+│  │  │  │  • generate_image   │  │  │                                               │
+│  │  │  └─────────────────────┘  │  │                                               │
+│  │  │            │              │  │                                               │
+│  │  │            ▼              │  │                                               │
+│  │  │  ┌─────────────────────┐  │  │                                               │
+│  │  │  │ Fallback to MLX     │  │  │    ┌────────────────────────────────────────┐ │
+│  │  │  │ (if OpenRouter fails)│  │  │    │         SHARED SERVICES               │ │
+│  │  │  └─────────────────────┘  │  │    │                                        │ │
+│  │  └───────────┬───────────────┘  │    │  • MessageService (existing)           │ │
+│  │              │                  │    │  • ConversationService (existing)      │ │
+│  │              ▼                  │    │  • MessagePoller (existing)            │ │
+│  │  ┌───────────────────────────┐  │    │  • ProfileLoader (new)                 │ │
+│  │  │   ImageGenerator          │  │    │  • PromptLoader (new)                  │ │
+│  │  │   • OpenRouter Flux/DALL-E│  │    │                                        │ │
+│  │  │   • Save to ~/Pictures    │  │    └────────────────────────────────────────┘ │
+│  │  │   • Import to Photos.app  │  │                                               │
+│  │  └───────────────────────────┘  │                                               │
+│  │                                 │                                               │
+│  └─────────────────────────────────┘                                               │
+│                                                                                     │
+│                              ┌────────────────────────────────────────┐             │
+│                              │       MessageService (existing)        │             │
+│                              │   • sendMessage(phone, text)           │             │
+│                              │   • sendMediaMessage(phone, text, img) │             │
+│                              │   • SMS/MMS fallback                   │             │
+│                              └────────────────────────────────────────┘             │
+│                                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Entry Point | Unified `main.ts` | Single process, shared services, no race conditions |
+| Configuration | JSON file + env secrets | Readable, version-controllable, complex structures |
+| System Prompts | External templates | Easy iteration, non-dev editable, A/B testable |
+| Reply Handling | Extend ChatbotHandler | Reuse existing infrastructure |
+| Fallback | MLX when OpenRouter fails | Graceful degradation, always delivers |
+
+---
+
+## Configuration Architecture
+
+### Secrets in `.env` (Minimal)
+
+```bash
+# ═══════════════════════════════════════════════════════════════════
+# FAMILY GIFT SYSTEM - SECRETS ONLY
+# ═══════════════════════════════════════════════════════════════════
+
+# OpenRouter API (for proactive messages)
+OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxx
+
+# Web Search API (choose one)
+WEB_SEARCH_PROVIDER=exa                    # Options: exa, tavily, serp
+WEB_SEARCH_API_KEY=your-api-key-here
+
+# Feature Flags
+GIFT_SYSTEM_ENABLED=true
+CHATBOT_ENABLED=true
+
+# Paths (optional overrides)
+FAMILY_PROFILES_PATH=./config/family-profiles.json
+PROMPTS_PATH=./prompts
+```
+
+### Family Profiles in JSON
+
+**File: `config/family-profiles.json`**
+
+```json
+{
+  "$schema": "./family-profiles.schema.json",
+  "version": "1.0.0",
+  "defaults": {
+    "timezone": "America/Chicago",
+    "imageEnabled": true,
+    "webSearchEnabled": true,
+    "proactiveEnabled": true
+  },
+  "familyMembers": [
+    {
+      "id": "dad",
+      "name": "David",
+      "phone": "+1XXXXXXXXXX",
+      "sendTime": "06:30",
+      "timezone": "America/Chicago",
+      "interests": ["Christianity", "Nashville history", "Southern cooking", "faith"],
+      "promptTemplate": "dad",
+      "themes": {
+        "0": { "name": "Sunday Reflection", "template": "devotional", "searchHint": "Sunday morning devotional passage" },
+        "1": { "name": "Morning Devotional", "template": "devotional", "searchHint": "Bible verse Monday encouragement" },
+        "2": { "name": "Nashville History", "template": "history", "searchHint": "Nashville Tennessee history this day" },
+        "3": { "name": "Recipe of the Day", "template": "recipe", "searchHint": "Southern comfort food recipe easy" },
+        "4": { "name": "Encouragement + Psalm", "template": "devotional", "searchHint": "uplifting Psalm perseverance" },
+        "5": { "name": "Weekend Recipe", "template": "recipe", "searchHint": "weekend slow cooker recipe special" },
+        "6": { "name": "Nashville Landmark", "template": "history", "searchHint": "Ryman Grand Ole Opry Parthenon Nashville" }
+      },
+      "imageStyles": {
+        "devotional": "serene sunrise landscape, spiritual, peaceful morning light, Tennessee hills",
+        "history": "historic Nashville photograph, sepia tones, architectural landmark",
+        "recipe": "rustic Southern food photography, warm lighting, comfort food aesthetic"
+      }
+    },
+    {
+      "id": "mom",
+      "name": "Mom",
+      "phone": "+1XXXXXXXXXX",
+      "sendTime": "07:00",
+      "timezone": "America/Chicago",
+      "interests": ["Interior design", "Nashville music scene", "Live music venues", "Cozy home aesthetics"],
+      "promptTemplate": "mom",
+      "themes": {
+        "0": { "name": "Cozy Home Moment", "template": "home", "searchHint": "hygge home Sunday relaxation" },
+        "1": { "name": "Design Tip", "template": "design", "searchHint": "interior design tip 2025" },
+        "2": { "name": "Nashville Music Pick", "template": "music", "searchHint": "Nashville live music tonight" },
+        "3": { "name": "Room Styling Idea", "template": "design", "searchHint": "room styling seasonal refresh" },
+        "4": { "name": "Hidden Gem Venue", "template": "music", "searchHint": "Nashville hidden gem bar listening room" },
+        "5": { "name": "Weekend Design Inspo", "template": "design", "searchHint": "weekend DIY design project" },
+        "6": { "name": "Nashville Event", "template": "music", "searchHint": "Nashville events this weekend" }
+      },
+      "imageStyles": {
+        "design": "beautiful interior design vignette, editorial style, warm lighting",
+        "music": "atmospheric Nashville music venue, neon lights, intimate concert",
+        "home": "hygge home moment, morning light through windows, cozy corner"
+      }
+    },
+    {
+      "id": "sister",
+      "name": "Sister",
+      "phone": "+1XXXXXXXXXX",
+      "sendTime": "08:00",
+      "timezone": "America/Los_Angeles",
+      "interests": ["Travel", "Health foods", "Fitness", "Painting", "Media/Advertising"],
+      "promptTemplate": "sister",
+      "themes": {
+        "0": { "name": "Self-Care Wellness", "template": "wellness", "searchHint": "Sunday self-care wellness routine" },
+        "1": { "name": "Monday Motivation", "template": "motivation", "searchHint": null },
+        "2": { "name": "Quick Healthy Recipe", "template": "health", "searchHint": "healthy quick breakfast recipe" },
+        "3": { "name": "Travel Bucket List", "template": "travel", "searchHint": "bucket list destination 2025 affordable" },
+        "4": { "name": "Ad/Media Insight", "template": "career", "searchHint": "advertising industry insight trend" },
+        "5": { "name": "Weekend Workout", "template": "fitness", "searchHint": "quick weekend workout routine" },
+        "6": { "name": "Creative Painting Prompt", "template": "art", "searchHint": null }
+      },
+      "imageStyles": {
+        "motivation": "empowering bold aesthetic, city skyline sunrise, energetic",
+        "health": "beautiful healthy food flat lay, bright colors, fresh ingredients",
+        "travel": "dream destination landscape, wanderlust, golden hour",
+        "career": "creative advertising art direction, modern bold design",
+        "fitness": "dynamic fitness movement, energy, determination",
+        "art": "abstract expressionist painting, bold brushstrokes, vibrant colors",
+        "wellness": "peaceful wellness scene, spa aesthetic, calm"
+      }
+    },
+    {
+      "id": "brother",
+      "name": "Brother",
+      "phone": "+1XXXXXXXXXX",
+      "sendTime": "07:30",
+      "timezone": "America/Chicago",
+      "interests": ["Architecture", "History", "Street fashion", "Cigars", "Art"],
+      "promptTemplate": "brother",
+      "themes": {
+        "0": { "name": "Design Philosophy", "template": "architecture", "searchHint": "famous architect quote philosophy" },
+        "1": { "name": "Architecture Spotlight", "template": "architecture", "searchHint": "famous modern architecture building" },
+        "2": { "name": "Street Fashion Intel", "template": "fashion", "searchHint": "street fashion trend winter 2025" },
+        "3": { "name": "Historical Moment", "template": "history", "searchHint": "interesting history this day" },
+        "4": { "name": "Cigar & Culture", "template": "culture", "searchHint": null },
+        "5": { "name": "Art Movement/Artist", "template": "art", "searchHint": "famous artist art movement" },
+        "6": { "name": "Weekend Look", "template": "fashion", "searchHint": "workwear fashion styling men" }
+      },
+      "imageStyles": {
+        "architecture": "dramatic architectural photography, black and white, sharp contrast",
+        "fashion": "street style fashion editorial, urban, sophisticated",
+        "history": "historic moment reimagined, artistic, dramatic",
+        "culture": "moody cigar lounge aesthetic, warm amber lighting",
+        "art": "fine art museum quality, contemplative, gallery"
+      }
+    },
+    {
+      "id": "grandma",
+      "name": "Grandma",
+      "phone": "+1XXXXXXXXXX",
+      "sendTime": "07:00",
+      "timezone": "America/Chicago",
+      "interests": ["Baking", "Gardening", "Antiques"],
+      "promptTemplate": "grandma",
+      "themes": {
+        "0": { "name": "Sweet Note", "template": "love", "searchHint": null },
+        "1": { "name": "Baking Tip", "template": "baking", "searchHint": "baking tip trick" },
+        "2": { "name": "Garden Seasonal", "template": "garden", "searchHint": "garden tasks this month" },
+        "3": { "name": "Antique Spotlight", "template": "antiques", "searchHint": "antique collectible history value" },
+        "4": { "name": "Classic Recipe", "template": "baking", "searchHint": "classic traditional recipe nostalgic" },
+        "5": { "name": "Weekend Garden Plan", "template": "garden", "searchHint": "weekend garden planning" },
+        "6": { "name": "Antique Hunting Tip", "template": "antiques", "searchHint": "antique hunting estate sale tips" }
+      },
+      "imageStyles": {
+        "baking": "warm farmhouse kitchen, fresh baked goods, afternoon sunlight",
+        "garden": "beautiful cottage garden, soft light, peaceful",
+        "antiques": "vintage antique still life, nostalgic, warm tones",
+        "love": "cozy grandmother's kitchen, warm, loving atmosphere"
+      }
+    }
+  ]
+}
+```
+
+### System Prompts as External Templates
+
+**Directory Structure:**
+```
+prompts/
+├── base/
+│   ├── proactive.hbs              # Shared foundation for proactive messages
+│   └── reply.hbs                  # Shared foundation for replies
+├── family/
+│   ├── dad/
+│   │   ├── proactive.hbs          # Dad's proactive persona
+│   │   ├── reply.hbs              # Dad's reply persona
+│   │   └── themes/
+│   │       ├── devotional.hbs
+│   │       ├── history.hbs
+│   │       └── recipe.hbs
+│   ├── mom/
+│   │   ├── proactive.hbs
+│   │   ├── reply.hbs
+│   │   └── themes/
+│   │       ├── design.hbs
+│   │       ├── music.hbs
+│   │       └── home.hbs
+│   ├── sister/
+│   │   └── ...
+│   ├── brother/
+│   │   └── ...
+│   └── grandma/
+│       └── ...
+└── special/
+    ├── christmas.hbs
+    ├── birthday.hbs
+    └── thanksgiving.hbs
+```
+
+**Example: `prompts/family/dad/proactive.hbs`**
+```handlebars
+You are sending a warm, personalized morning message to {{name}}, a Christian man who loves his faith, Nashville history, and good food.
+
+Today is {{dayOfWeek}}, {{fullDate}}.
+Theme: {{themeName}}
+
+{{#if webSearchEnabled}}
+You have access to web search. Use it to find current, relevant information such as:
+- Bible verses appropriate for today
+- Nashville historical events from this date
+- Trending Southern recipes
+{{/if}}
+
+Guidelines:
+- Keep messages concise (2-4 sentences for devotionals, slightly longer for recipes/history)
+- Be genuine, not preachy
+- When sharing scripture, include the reference
+- For recipes, give brief instructions that fit in a text message
+- Sign off warmly but not formally
+
+{{> themes/{{themeTemplate}} }}
+```
+
+**Example: `prompts/family/dad/themes/devotional.hbs`**
+```handlebars
+For today's devotional:
+- Search for an inspiring Bible verse appropriate for {{dayOfWeek}}
+- Write a brief, heartfelt reflection (2-3 sentences)
+- Connect the verse to everyday life
+- End with encouragement for the day ahead
+```
+
+**Example: `prompts/family/dad/reply.hbs`**
+```handlebars
+You are a warm, supportive AI assistant chatting with {{name}}. He loves discussing faith, Nashville history, and cooking.
+
+Guidelines:
+- Keep responses conversational and genuine
+- If he asks about scripture, provide thoughtful interpretations
+- If he asks about recipes, give practical cooking advice
+- Match his energy - if brief, be brief; if detailed, engage fully
+- Remember context from the conversation
 ```
 
 ---
 
-## Phase 1: Foundation & Configuration (Days 1-2)
-
-### Objectives
-- Set up project structure for Family Gift System
-- Configure OpenRouter API integration
-- Define family member profiles and schedules
-
-### 1.1 Create Directory Structure
+## File Structure
 
 ```
 src/
-├── gift-system/
+├── main.ts                           # UNIFIED entry point
+├── chatbot/
+│   ├── ChatbotHandler.ts             # EXTEND: Add family member detection
+│   ├── MLXClient.ts                  # Existing
+│   ├── MessagePoller.ts              # Existing (reuse)
+│   └── types.ts                      # Existing
+├── services/
+│   ├── MessageService.ts             # Existing (reuse)
+│   ├── ConversationService.ts        # Existing (reuse)
+│   └── ...                           # Other existing services
+├── gift-system/                      # NEW MODULE
+│   ├── index.ts                      # Module exports
+│   ├── types.ts                      # Gift system type definitions
+│   ├── GiftScheduler.ts              # Scheduling orchestration
+│   ├── ProactiveGenerator.ts         # Content generation with tools
 │   ├── config/
-│   │   ├── FamilyProfiles.ts        # Family member definitions
-│   │   ├── OpenRouterConfig.ts      # API configuration
-│   │   └── ScheduleConfig.ts        # Timing and timezone settings
-│   ├── scheduler/
-│   │   ├── GiftScheduler.ts         # Main orchestrator
-│   │   └── ScheduleManager.ts       # Cron job management
-│   ├── content/
-│   │   ├── ContentGenerator.ts      # Proactive message generation
-│   │   ├── ToolOrchestrator.ts      # Web search + image coordination
-│   │   └── templates/
-│   │       ├── dad.ts
-│   │       ├── mom.ts
-│   │       ├── sister.ts
-│   │       ├── brother.ts
-│   │       └── grandma.ts
+│   │   ├── ProfileLoader.ts          # Load JSON family profiles
+│   │   └── PromptLoader.ts           # Load Handlebars templates
 │   ├── openrouter/
-│   │   ├── OpenRouterClient.ts      # API client
-│   │   ├── WebSearchTool.ts         # Web search integration
-│   │   ├── ImageGenerationTool.ts   # Image generation
-│   │   └── ToolDefinitions.ts       # Tool schemas
+│   │   ├── OpenRouterClient.ts       # API client with tool support
+│   │   ├── WebSearchTool.ts          # Exa/Tavily integration
+│   │   └── ToolDefinitions.ts        # Tool schemas
 │   ├── image/
-│   │   ├── ImageGenerator.ts        # Image pipeline orchestrator
-│   │   ├── PhotosLibrary.ts         # macOS Photos integration
-│   │   └── ImageStorage.ts          # Local file management
-│   ├── reply/
-│   │   ├── ReplyHandler.ts          # Routes replies to local MLX
-│   │   └── FamilyContextManager.ts  # Per-member conversation state
-│   ├── types/
-│   │   └── index.ts                 # All type definitions
-│   └── index.ts                     # Module entry point
-├── gift-main.ts                     # Standalone entry point
+│   │   ├── ImageGenerator.ts         # Image generation pipeline
+│   │   ├── PhotosLibrary.ts          # macOS Photos AppleScript
+│   │   └── ImageStorage.ts           # Local file management
+│   └── cli/
+│       └── commands.ts               # CLI for testing/manual triggers
+├── utils/
+│   └── ...                           # Existing utilities
+└── types/
+    └── ...                           # Existing types
+
+config/
+├── family-profiles.json              # Family member configuration
+└── family-profiles.schema.json       # JSON schema for validation
+
+prompts/
+├── base/
+│   ├── proactive.hbs
+│   └── reply.hbs
+├── family/
+│   ├── dad/
+│   ├── mom/
+│   ├── sister/
+│   ├── brother/
+│   └── grandma/
+└── special/
+    └── ...
 ```
 
-### 1.2 Environment Configuration
+---
 
-**File: `.env` additions**
+## Phase 1: Foundation (Day 1)
+
+### Objectives
+- Set up configuration architecture
+- Create type definitions
+- Initialize prompt template system
+
+### 1.1 Install Dependencies
+
 ```bash
-# ═══════════════════════════════════════════════════════════════════
-# FAMILY DAILY GIFT SYSTEM CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════
-
-# ─── OpenRouter API (Proactive Messages) ───
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxxxxxxx
-OPENROUTER_LLM_MODEL=anthropic/claude-3.5-sonnet      # For text generation
-OPENROUTER_IMAGE_MODEL=black-forest-labs/flux-1.1-pro # For image generation
-
-# ─── Web Search Tool ───
-OPENROUTER_WEB_SEARCH_ENABLED=true
-OPENROUTER_WEB_SEARCH_PROVIDER=exa     # Options: exa, tavily, serp
-
-# ─── Image Generation ───
-IMAGE_GENERATION_ENABLED=true
-IMAGE_SAVE_PATH=~/Pictures/FamilyGifts
-IMAGE_SIZE=1024x1024
-PHOTOS_ALBUM_NAME=Family Gifts
-PHOTOS_INTEGRATION_ENABLED=true
-
-# ─── Local MLX (Reply Handling) ───
-MLX_API_URL=http://localhost:8000
-MLX_MODEL=mlx-community/Llama-3.2-3B-Instruct-4bit
-
-# ─── Gift System Settings ───
-GIFT_SYSTEM_ENABLED=true
-GIFT_DEFAULT_TIMEZONE=America/Chicago
-
-# ─── Family Member Configuration ───
-# Dad (David)
-FAMILY_DAD_ENABLED=true
-FAMILY_DAD_NAME=David
-FAMILY_DAD_PHONE=+1XXXXXXXXXX
-FAMILY_DAD_SEND_TIME=06:30
-FAMILY_DAD_TIMEZONE=America/Chicago
-
-# Mom
-FAMILY_MOM_ENABLED=true
-FAMILY_MOM_NAME=Mom
-FAMILY_MOM_PHONE=+1XXXXXXXXXX
-FAMILY_MOM_SEND_TIME=07:00
-FAMILY_MOM_TIMEZONE=America/Chicago
-
-# Sister (USC)
-FAMILY_SISTER_ENABLED=true
-FAMILY_SISTER_NAME=Sister
-FAMILY_SISTER_PHONE=+1XXXXXXXXXX
-FAMILY_SISTER_SEND_TIME=08:00
-FAMILY_SISTER_TIMEZONE=America/Los_Angeles
-
-# Brother
-FAMILY_BROTHER_ENABLED=true
-FAMILY_BROTHER_NAME=Brother
-FAMILY_BROTHER_PHONE=+1XXXXXXXXXX
-FAMILY_BROTHER_SEND_TIME=07:30
-FAMILY_BROTHER_TIMEZONE=America/Chicago
-
-# Grandma
-FAMILY_GRANDMA_ENABLED=true
-FAMILY_GRANDMA_NAME=Grandma
-FAMILY_GRANDMA_PHONE=+1XXXXXXXXXX
-FAMILY_GRANDMA_SEND_TIME=07:00
-FAMILY_GRANDMA_TIMEZONE=America/Chicago
+npm install node-schedule handlebars
+npm install -D @types/node-schedule
 ```
 
-### 1.3 Core Types Definition
+### 1.2 Create Type Definitions
 
-**File: `src/gift-system/types/index.ts`**
+**File: `src/gift-system/types.ts`**
 ```typescript
 // ═══════════════════════════════════════════════════════════════════
 // FAMILY GIFT SYSTEM - TYPE DEFINITIONS
@@ -211,43 +428,34 @@ export interface FamilyMember {
   id: string;
   name: string;
   phone: string;
-  sendTime: string;           // "06:30" format
-  timezone: string;           // "America/Chicago"
+  sendTime: string;              // "06:30" format
+  timezone: string;              // "America/Chicago"
   interests: string[];
-  themes: WeeklyTheme[];
-  systemPrompt: string;       // For proactive messages (OpenRouter)
-  replySystemPrompt: string;  // For replies (local MLX)
-  imageEnabled: boolean;
-  webSearchEnabled: boolean;
-  enabled: boolean;
+  promptTemplate: string;        // Template directory name
+  themes: Record<string, DayTheme>;  // Key: day of week (0-6)
+  imageStyles: Record<string, string>;
+
+  // Feature flags (inherit from defaults if not specified)
+  proactiveEnabled?: boolean;
+  imageEnabled?: boolean;
+  webSearchEnabled?: boolean;
 }
 
-export interface WeeklyTheme {
-  dayOfWeek: number;          // 0=Sunday, 6=Saturday
-  themeName: string;
-  description: string;
-  promptTemplate: string;
-  imageStyle?: string;
-  webSearchQuery?: string;    // Template for dynamic search
-  includeImage: boolean;
-  includeWebSearch: boolean;
+export interface DayTheme {
+  name: string;
+  template: string;              // Theme template name
+  searchHint: string | null;     // Web search query hint (null = no search)
 }
 
-export interface OpenRouterTool {
-  type: 'function';
-  function: {
-    name: string;
-    description: string;
-    parameters: Record<string, unknown>;
+export interface FamilyProfilesConfig {
+  version: string;
+  defaults: {
+    timezone: string;
+    imageEnabled: boolean;
+    webSearchEnabled: boolean;
+    proactiveEnabled: boolean;
   };
-}
-
-export interface WebSearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-  content?: string;
-  publishedDate?: string;
+  familyMembers: FamilyMember[];
 }
 
 export interface GeneratedContent {
@@ -257,6 +465,7 @@ export interface GeneratedContent {
   model: string;
   tokensUsed: number;
   toolsInvoked: string[];
+  fallbackUsed: boolean;
 }
 
 export interface GeneratedImage {
@@ -267,8 +476,17 @@ export interface GeneratedImage {
   addedToPhotos: boolean;
 }
 
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  content?: string;
+  publishedDate?: string;
+}
+
 export interface DailyGiftResult {
   familyMemberId: string;
+  memberName: string;
   scheduledTime: Date;
   sentTime: Date;
   theme: string;
@@ -277,30 +495,208 @@ export interface DailyGiftResult {
   error?: string;
 }
 
-export type MessageType = 'proactive' | 'reply';
+export interface GiftSystemConfig {
+  enabled: boolean;
+  profilesPath: string;
+  promptsPath: string;
+  openRouterApiKey: string;
+  openRouterModel: string;
+  webSearchProvider: 'exa' | 'tavily' | 'serp';
+  webSearchApiKey: string;
+  imageModel: string;
+  imageSavePath: string;
+  photosAlbumName: string;
+  photosEnabled: boolean;
+
+  // CLI/Testing options
+  dryRun: boolean;
+  testRecipient?: string;
+}
+
+export interface PromptContext {
+  name: string;
+  dayOfWeek: string;
+  fullDate: string;
+  themeName: string;
+  themeTemplate: string;
+  webSearchEnabled: boolean;
+  imageEnabled: boolean;
+  interests: string[];
+  searchHint?: string;
+}
 ```
 
-### 1.4 Deliverables
-- [ ] Directory structure created
-- [ ] Environment variables defined
-- [ ] Type definitions complete
-- [ ] Family member profiles documented
+### 1.3 Create Profile Loader
+
+**File: `src/gift-system/config/ProfileLoader.ts`**
+```typescript
+import fs from 'fs/promises';
+import path from 'path';
+import { FamilyProfilesConfig, FamilyMember } from '../types.js';
+import logger from '../../utils/logger.js';
+
+export class ProfileLoader {
+  private config: FamilyProfilesConfig | null = null;
+  private profilesPath: string;
+
+  constructor(profilesPath: string = './config/family-profiles.json') {
+    this.profilesPath = profilesPath;
+  }
+
+  async load(): Promise<FamilyProfilesConfig> {
+    if (this.config) return this.config;
+
+    try {
+      const fullPath = path.resolve(this.profilesPath);
+      const content = await fs.readFile(fullPath, 'utf-8');
+      this.config = JSON.parse(content) as FamilyProfilesConfig;
+
+      logger.info('Family profiles loaded', {
+        version: this.config.version,
+        memberCount: this.config.familyMembers.length
+      });
+
+      return this.config;
+    } catch (error) {
+      logger.error('Failed to load family profiles', { error, path: this.profilesPath });
+      throw new Error(`Failed to load family profiles: ${error}`);
+    }
+  }
+
+  async getEnabledMembers(): Promise<FamilyMember[]> {
+    const config = await this.load();
+    return config.familyMembers.filter(member => {
+      const enabled = member.proactiveEnabled ?? config.defaults.proactiveEnabled;
+      return enabled;
+    });
+  }
+
+  async getMember(id: string): Promise<FamilyMember | undefined> {
+    const config = await this.load();
+    return config.familyMembers.find(m => m.id === id);
+  }
+
+  async getMemberByPhone(phone: string): Promise<FamilyMember | undefined> {
+    const config = await this.load();
+    // Normalize phone comparison
+    const normalizedPhone = phone.replace(/\D/g, '');
+    return config.familyMembers.find(m => {
+      const memberPhone = m.phone.replace(/\D/g, '');
+      return normalizedPhone.includes(memberPhone) || memberPhone.includes(normalizedPhone);
+    });
+  }
+
+  getDefaults(): FamilyProfilesConfig['defaults'] | null {
+    return this.config?.defaults ?? null;
+  }
+}
+```
+
+### 1.4 Create Prompt Loader
+
+**File: `src/gift-system/config/PromptLoader.ts`**
+```typescript
+import fs from 'fs/promises';
+import path from 'path';
+import Handlebars from 'handlebars';
+import { PromptContext } from '../types.js';
+import logger from '../../utils/logger.js';
+
+export class PromptLoader {
+  private promptsPath: string;
+  private templateCache: Map<string, HandlebarsTemplateDelegate> = new Map();
+
+  constructor(promptsPath: string = './prompts') {
+    this.promptsPath = promptsPath;
+    this.registerHelpers();
+  }
+
+  private registerHelpers(): void {
+    // Register Handlebars helpers
+    Handlebars.registerHelper('uppercase', (str: string) => str?.toUpperCase());
+    Handlebars.registerHelper('lowercase', (str: string) => str?.toLowerCase());
+    Handlebars.registerHelper('dateFormat', (date: Date, format: string) => {
+      return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    });
+  }
+
+  async loadTemplate(templatePath: string): Promise<HandlebarsTemplateDelegate> {
+    // Check cache first
+    if (this.templateCache.has(templatePath)) {
+      return this.templateCache.get(templatePath)!;
+    }
+
+    try {
+      const fullPath = path.resolve(this.promptsPath, templatePath);
+      const content = await fs.readFile(fullPath, 'utf-8');
+      const template = Handlebars.compile(content);
+
+      this.templateCache.set(templatePath, template);
+      return template;
+    } catch (error) {
+      logger.warn('Template not found, using fallback', { templatePath, error });
+      // Return a simple passthrough template
+      return Handlebars.compile('{{name}} - {{themeName}}');
+    }
+  }
+
+  async buildProactivePrompt(
+    memberId: string,
+    context: PromptContext
+  ): Promise<string> {
+    // Load base template
+    const basePath = `family/${memberId}/proactive.hbs`;
+    const template = await this.loadTemplate(basePath);
+
+    // Load theme-specific partial if exists
+    const themePath = `family/${memberId}/themes/${context.themeTemplate}.hbs`;
+    try {
+      const themeContent = await fs.readFile(
+        path.resolve(this.promptsPath, themePath),
+        'utf-8'
+      );
+      Handlebars.registerPartial(`themes/${context.themeTemplate}`, themeContent);
+    } catch {
+      // Theme partial is optional
+    }
+
+    return template(context);
+  }
+
+  async buildReplyPrompt(memberId: string, context: PromptContext): Promise<string> {
+    const templatePath = `family/${memberId}/reply.hbs`;
+    const template = await this.loadTemplate(templatePath);
+    return template(context);
+  }
+
+  clearCache(): void {
+    this.templateCache.clear();
+  }
+}
+```
+
+### 1.5 Deliverables
+- [ ] `npm install node-schedule handlebars`
+- [ ] `src/gift-system/types.ts` created
+- [ ] `src/gift-system/config/ProfileLoader.ts` created
+- [ ] `src/gift-system/config/PromptLoader.ts` created
+- [ ] `config/family-profiles.json` created with schema
+- [ ] `prompts/` directory structure created
 
 ---
 
-## Phase 2: OpenRouter Integration with Tools (Days 3-5)
+## Phase 2: OpenRouter Integration (Days 2-3)
 
 ### Objectives
-- Implement OpenRouter API client with tool calling support
+- Implement OpenRouter API client with tool calling
 - Create web search tool integration
-- Build image generation pipeline
+- Add graceful fallback to local MLX
 
-### 2.1 OpenRouter Client with Tools
+### 2.1 OpenRouter Client
 
 **File: `src/gift-system/openrouter/OpenRouterClient.ts`**
 ```typescript
 import logger from '../../utils/logger.js';
-import { OpenRouterTool, WebSearchResult } from '../types/index.js';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -318,16 +714,12 @@ interface ToolCall {
   };
 }
 
-interface OpenRouterResponse {
-  id: string;
-  choices: Array<{
-    message: ChatMessage;
-    finish_reason: string;
-  }>;
-  usage: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
+interface OpenRouterTool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
   };
 }
 
@@ -341,9 +733,6 @@ export class OpenRouterClient {
     this.defaultModel = defaultModel;
   }
 
-  /**
-   * Generate content with optional tool calling
-   */
   async generateWithTools(
     messages: ChatMessage[],
     tools?: OpenRouterTool[],
@@ -363,7 +752,11 @@ export class OpenRouterClient {
       temperature = 0.7
     } = options;
 
-    logger.info('OpenRouter request', { model, messageCount: messages.length, toolCount: tools?.length });
+    logger.info('OpenRouter request', {
+      model,
+      messageCount: messages.length,
+      toolCount: tools?.length
+    });
 
     const body: Record<string, unknown> = {
       model,
@@ -393,7 +786,7 @@ export class OpenRouterClient {
       throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
     }
 
-    const result = await response.json() as OpenRouterResponse;
+    const result = await response.json();
     const choice = result.choices[0];
 
     return {
@@ -406,9 +799,6 @@ export class OpenRouterClient {
     };
   }
 
-  /**
-   * Generate image via OpenRouter
-   */
   async generateImage(
     prompt: string,
     options: { model?: string; size?: string } = {}
@@ -428,17 +818,12 @@ export class OpenRouterClient {
         'HTTP-Referer': 'https://github.com/imessage-mlx-chatbot',
         'X-Title': 'Family Gift System'
       },
-      body: JSON.stringify({
-        model,
-        prompt,
-        n: 1,
-        size
-      })
+      body: JSON.stringify({ model, prompt, n: 1, size })
     });
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`OpenRouter image generation error: ${response.status} - ${error}`);
+      throw new Error(`OpenRouter image error: ${response.status} - ${error}`);
     }
 
     const result = await response.json();
@@ -452,28 +837,28 @@ export class OpenRouterClient {
 **File: `src/gift-system/openrouter/WebSearchTool.ts`**
 ```typescript
 import logger from '../../utils/logger.js';
-import { WebSearchResult, OpenRouterTool } from '../types/index.js';
+import { WebSearchResult } from '../types.js';
 
-export const WEB_SEARCH_TOOL_DEFINITION: OpenRouterTool = {
-  type: 'function',
+export const WEB_SEARCH_TOOL_DEFINITION = {
+  type: 'function' as const,
   function: {
     name: 'web_search',
-    description: 'Search the web for real-time information. Use this to find current events, live information, recent news, recipes, venue details, or any information that needs to be current and accurate.',
+    description: 'Search the web for real-time information. Use for current events, news, recipes, venues, Bible verses, or any information that needs to be fresh and accurate.',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The search query to find relevant information'
+          description: 'The search query'
         },
         category: {
           type: 'string',
           enum: ['news', 'events', 'recipes', 'venues', 'general', 'religious'],
-          description: 'Category of search to help refine results'
+          description: 'Category to refine results'
         },
         location: {
           type: 'string',
-          description: 'Optional location to localize results (e.g., "Nashville, TN")'
+          description: 'Location for local results (e.g., "Nashville, TN")'
         }
       },
       required: ['query']
@@ -490,19 +875,14 @@ export class WebSearchTool {
     this.apiKey = apiKey;
   }
 
-  /**
-   * Execute a web search and return formatted results
-   */
   async search(
     query: string,
     options: { category?: string; location?: string; numResults?: number } = {}
   ): Promise<WebSearchResult[]> {
     const { numResults = 5, location } = options;
-
-    // Enhance query with location if provided
     const enhancedQuery = location ? `${query} ${location}` : query;
 
-    logger.info('Web search executing', { query: enhancedQuery, provider: this.provider });
+    logger.info('Web search', { query: enhancedQuery, provider: this.provider });
 
     switch (this.provider) {
       case 'exa':
@@ -511,8 +891,6 @@ export class WebSearchTool {
         return this.searchTavily(enhancedQuery, numResults);
       case 'serp':
         return this.searchSerp(enhancedQuery, numResults);
-      default:
-        throw new Error(`Unknown search provider: ${this.provider}`);
     }
   }
 
@@ -531,9 +909,7 @@ export class WebSearchTool {
       })
     });
 
-    if (!response.ok) {
-      throw new Error(`Exa search error: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Exa error: ${response.status}`);
 
     const data = await response.json();
     return data.results.map((r: any) => ({
@@ -548,19 +924,17 @@ export class WebSearchTool {
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        api_key: this.apiKey,
         query,
         max_results: numResults,
         include_answer: true
       })
     });
 
-    if (!response.ok) {
-      throw new Error(`Tavily search error: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Tavily error: ${response.status}`);
 
     const data = await response.json();
     return data.results.map((r: any) => ({
@@ -572,7 +946,6 @@ export class WebSearchTool {
   }
 
   private async searchSerp(query: string, numResults: number): Promise<WebSearchResult[]> {
-    // SerpAPI implementation
     const params = new URLSearchParams({
       q: query,
       api_key: this.apiKey,
@@ -580,10 +953,7 @@ export class WebSearchTool {
     });
 
     const response = await fetch(`https://serpapi.com/search.json?${params}`);
-
-    if (!response.ok) {
-      throw new Error(`SerpAPI error: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`SerpAPI error: ${response.status}`);
 
     const data = await response.json();
     return (data.organic_results || []).map((r: any) => ({
@@ -593,14 +963,8 @@ export class WebSearchTool {
     }));
   }
 
-  /**
-   * Format search results for LLM consumption
-   */
-  formatResultsForLLM(results: WebSearchResult[]): string {
-    if (results.length === 0) {
-      return 'No search results found.';
-    }
-
+  formatForLLM(results: WebSearchResult[]): string {
+    if (results.length === 0) return 'No search results found.';
     return results.map((r, i) =>
       `[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.url}`
     ).join('\n\n');
@@ -608,98 +972,96 @@ export class WebSearchTool {
 }
 ```
 
-### 2.3 Tool Orchestrator
+### 2.3 Proactive Generator with Fallback
 
-**File: `src/gift-system/content/ToolOrchestrator.ts`**
+**File: `src/gift-system/ProactiveGenerator.ts`**
 ```typescript
-import { OpenRouterClient } from '../openrouter/OpenRouterClient.js';
-import { WebSearchTool, WEB_SEARCH_TOOL_DEFINITION } from '../openrouter/WebSearchTool.js';
-import { ImageGenerationTool } from '../openrouter/ImageGenerationTool.js';
-import { FamilyMember, WeeklyTheme, GeneratedContent, OpenRouterTool } from '../types/index.js';
-import logger from '../../utils/logger.js';
+import { OpenRouterClient } from './openrouter/OpenRouterClient.js';
+import { WebSearchTool, WEB_SEARCH_TOOL_DEFINITION } from './openrouter/WebSearchTool.js';
+import { ImageGenerator } from './image/ImageGenerator.js';
+import { PromptLoader } from './config/PromptLoader.js';
+import { MLXClient } from '../chatbot/MLXClient.js';
+import { FamilyMember, DayTheme, GeneratedContent, PromptContext } from './types.js';
+import logger from '../utils/logger.js';
 
-interface ToolCall {
-  id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
-
-export class ToolOrchestrator {
+export class ProactiveGenerator {
   private openRouter: OpenRouterClient;
   private webSearch: WebSearchTool;
-  private imageGenerator: ImageGenerationTool;
+  private imageGenerator: ImageGenerator;
+  private promptLoader: PromptLoader;
+  private mlxClient: MLXClient;  // Fallback
 
-  constructor(
-    openRouterApiKey: string,
-    webSearchApiKey: string,
-    config: {
-      llmModel?: string;
-      imageModel?: string;
-      webSearchProvider?: 'exa' | 'tavily' | 'serp';
-    } = {}
-  ) {
-    this.openRouter = new OpenRouterClient(
-      openRouterApiKey,
-      config.llmModel || 'anthropic/claude-3.5-sonnet'
-    );
-    this.webSearch = new WebSearchTool(
-      config.webSearchProvider || 'exa',
-      webSearchApiKey
-    );
-    this.imageGenerator = new ImageGenerationTool(
-      openRouterApiKey,
-      config.imageModel || 'black-forest-labs/flux-1.1-pro'
-    );
+  constructor(config: {
+    openRouterApiKey: string;
+    openRouterModel: string;
+    webSearchProvider: 'exa' | 'tavily' | 'serp';
+    webSearchApiKey: string;
+    imageModel: string;
+    imageSavePath: string;
+    photosAlbumName: string;
+    photosEnabled: boolean;
+    promptsPath: string;
+    mlxApiUrl: string;
+  }) {
+    this.openRouter = new OpenRouterClient(config.openRouterApiKey, config.openRouterModel);
+    this.webSearch = new WebSearchTool(config.webSearchProvider, config.webSearchApiKey);
+    this.imageGenerator = new ImageGenerator(config.openRouterApiKey, {
+      model: config.imageModel,
+      savePath: config.imageSavePath,
+      photosAlbumName: config.photosAlbumName,
+      photosEnabled: config.photosEnabled
+    });
+    this.promptLoader = new PromptLoader(config.promptsPath);
+    this.mlxClient = new MLXClient(config.mlxApiUrl);
   }
 
-  /**
-   * Generate a complete daily gift with tools
-   */
-  async generateDailyGift(
+  async generate(
     member: FamilyMember,
-    theme: WeeklyTheme,
-    date: Date
+    theme: DayTheme,
+    date: Date = new Date()
   ): Promise<GeneratedContent> {
-    const tools: OpenRouterTool[] = [];
+    const context = this.buildContext(member, theme, date);
+
+    try {
+      // Try OpenRouter with tools first
+      return await this.generateWithOpenRouter(member, theme, context);
+    } catch (error) {
+      logger.warn('OpenRouter failed, falling back to local MLX', {
+        error: error instanceof Error ? error.message : error,
+        member: member.id
+      });
+
+      // Fallback to local MLX (no tools, no images)
+      return await this.generateWithMLXFallback(member, theme, context);
+    }
+  }
+
+  private async generateWithOpenRouter(
+    member: FamilyMember,
+    theme: DayTheme,
+    context: PromptContext
+  ): Promise<GeneratedContent> {
+    const systemPrompt = await this.promptLoader.buildProactivePrompt(member.id, context);
+    const tools = context.webSearchEnabled ? [WEB_SEARCH_TOOL_DEFINITION] : [];
     const toolsInvoked: string[] = [];
     let webSearchResults: WebSearchResult[] = [];
 
-    // Add web search tool if enabled
-    if (theme.includeWebSearch && member.webSearchEnabled) {
-      tools.push(WEB_SEARCH_TOOL_DEFINITION);
-    }
-
-    // Build the system prompt with context
-    const systemPrompt = this.buildSystemPrompt(member, theme, date);
-    const userPrompt = this.buildUserPrompt(member, theme, date);
-
-    // Initial generation with potential tool calls
+    // Initial generation
     let messages: any[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
+      { role: 'user', content: `Generate today's ${context.themeName} message.` }
     ];
 
     let finalResponse = '';
     let totalTokens = 0;
     let iterations = 0;
-    const maxIterations = 3;
 
     // Tool calling loop
-    while (iterations < maxIterations) {
+    while (iterations < 3) {
       iterations++;
-
-      const result = await this.openRouter.generateWithTools(
-        messages,
-        tools.length > 0 ? tools : undefined,
-        { maxTokens: 1024, temperature: 0.8 }
-      );
-
+      const result = await this.openRouter.generateWithTools(messages, tools);
       totalTokens += result.usage.promptTokens + result.usage.completionTokens;
 
-      // If no tool calls, we have our final response
       if (result.toolCalls.length === 0) {
         finalResponse = result.response;
         break;
@@ -707,199 +1069,171 @@ export class ToolOrchestrator {
 
       // Process tool calls
       for (const toolCall of result.toolCalls) {
-        const toolResult = await this.executeToolCall(toolCall, member);
-        toolsInvoked.push(toolCall.function.name);
+        const args = JSON.parse(toolCall.function.arguments);
 
         if (toolCall.function.name === 'web_search') {
-          webSearchResults = toolResult.results;
+          toolsInvoked.push('web_search');
+          const searchResults = await this.webSearch.search(args.query, {
+            category: args.category,
+            location: args.location
+          });
+          webSearchResults = searchResults;
+
+          messages.push({
+            role: 'assistant',
+            content: result.response,
+            tool_calls: [toolCall]
+          });
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: this.webSearch.formatForLLM(searchResults)
+          });
         }
-
-        // Add assistant message with tool call
-        messages.push({
-          role: 'assistant',
-          content: result.response,
-          tool_calls: [toolCall]
-        });
-
-        // Add tool result
-        messages.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(toolResult)
-        });
       }
     }
 
     // Generate image if enabled
-    let generatedImage: GeneratedImage | undefined;
-    if (theme.includeImage && member.imageEnabled) {
-      generatedImage = await this.generateImage(member, theme, date, finalResponse);
-      if (generatedImage) {
+    let image: GeneratedImage | undefined;
+    if (context.imageEnabled && member.imageStyles[theme.template]) {
+      try {
+        image = await this.imageGenerator.generate(
+          member.imageStyles[theme.template],
+          member.id,
+          theme.name,
+          new Date()
+        );
         toolsInvoked.push('image_generation');
+      } catch (error) {
+        logger.warn('Image generation failed', { error, member: member.id });
       }
     }
 
     return {
       text: finalResponse,
-      image: generatedImage,
+      image,
       webSearchResults: webSearchResults.length > 0 ? webSearchResults : undefined,
-      model: 'anthropic/claude-3.5-sonnet',
+      model: 'openrouter',
       tokensUsed: totalTokens,
-      toolsInvoked
+      toolsInvoked,
+      fallbackUsed: false
     };
   }
 
-  private async executeToolCall(
-    toolCall: ToolCall,
-    member: FamilyMember
-  ): Promise<any> {
-    const args = JSON.parse(toolCall.function.arguments);
-
-    switch (toolCall.function.name) {
-      case 'web_search':
-        const results = await this.webSearch.search(args.query, {
-          category: args.category,
-          location: args.location
-        });
-        return {
-          results,
-          formatted: this.webSearch.formatResultsForLLM(results)
-        };
-
-      default:
-        throw new Error(`Unknown tool: ${toolCall.function.name}`);
-    }
-  }
-
-  private async generateImage(
+  private async generateWithMLXFallback(
     member: FamilyMember,
-    theme: WeeklyTheme,
-    date: Date,
-    messageContent: string
-  ): Promise<GeneratedImage | undefined> {
-    try {
-      // Generate image prompt based on theme and message
-      const imagePrompt = await this.generateImagePrompt(member, theme, messageContent);
-      return await this.imageGenerator.generate(imagePrompt, member.id, theme.themeName, date);
-    } catch (error) {
-      logger.error('Image generation failed', { error, memberId: member.id });
-      return undefined;
-    }
-  }
+    theme: DayTheme,
+    context: PromptContext
+  ): Promise<GeneratedContent> {
+    // Simplified prompt without tool expectations
+    const fallbackPrompt = `You are sending a warm morning message to ${member.name}.
+Today is ${context.dayOfWeek}, ${context.fullDate}.
+Theme: ${context.themeName}
 
-  private async generateImagePrompt(
-    member: FamilyMember,
-    theme: WeeklyTheme,
-    messageContent: string
-  ): Promise<string> {
-    const result = await this.openRouter.generateWithTools(
-      [
-        {
-          role: 'system',
-          content: `You are an expert at crafting prompts for AI image generators. Create a single, detailed image prompt (2-3 sentences) based on the message content and theme. Include: subject, composition, lighting, art style, and mood. Output ONLY the prompt.`
-        },
-        {
-          role: 'user',
-          content: `Theme: ${theme.themeName}\nImage style: ${theme.imageStyle || 'high quality'}\nMessage content: ${messageContent}\n\nCreate an image prompt:`
-        }
+Their interests: ${member.interests.join(', ')}
+
+Generate a thoughtful, personalized message. Keep it concise (2-4 sentences).
+Sign off warmly.`;
+
+    const response = await this.mlxClient.generate({
+      messages: [
+        { role: 'system', content: fallbackPrompt },
+        { role: 'user', content: `Generate today's ${context.themeName} message.` }
       ],
-      undefined,
-      { maxTokens: 200, temperature: 0.9 }
-    );
-
-    return result.response.trim();
-  }
-
-  private buildSystemPrompt(member: FamilyMember, theme: WeeklyTheme, date: Date): string {
-    const dateStr = date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric'
+      max_tokens: 512,
+      temperature: 0.8
     });
 
-    return `${member.systemPrompt}
-
-Today is ${dateStr}. Theme: ${theme.themeName} - ${theme.description}
-
-You have access to web search if you need current information (events, news, venues, recipes, etc.). Use it to make the message more relevant and personalized.
-
-Keep the message concise and suitable for iMessage (2-4 short paragraphs max). Sign off warmly but not formally.`;
+    return {
+      text: response.response,
+      image: undefined,
+      webSearchResults: undefined,
+      model: 'mlx-fallback',
+      tokensUsed: response.tokens_generated,
+      toolsInvoked: [],
+      fallbackUsed: true
+    };
   }
 
-  private buildUserPrompt(member: FamilyMember, theme: WeeklyTheme, date: Date): string {
-    return theme.promptTemplate
-      .replace('{name}', member.name)
-      .replace('{date}', date.toLocaleDateString())
-      .replace('{dayOfWeek}', date.toLocaleDateString('en-US', { weekday: 'long' }));
+  private buildContext(member: FamilyMember, theme: DayTheme, date: Date): PromptContext {
+    return {
+      name: member.name,
+      dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'long' }),
+      fullDate: date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      }),
+      themeName: theme.name,
+      themeTemplate: theme.template,
+      webSearchEnabled: (member.webSearchEnabled ?? true) && theme.searchHint !== null,
+      imageEnabled: member.imageEnabled ?? true,
+      interests: member.interests,
+      searchHint: theme.searchHint ?? undefined
+    };
   }
 }
 ```
 
 ### 2.4 Deliverables
-- [ ] OpenRouterClient with tool calling support
-- [ ] WebSearchTool with Exa/Tavily/SerpAPI support
-- [ ] ToolOrchestrator for coordinating generation
-- [ ] Image prompt generation pipeline
+- [ ] `src/gift-system/openrouter/OpenRouterClient.ts`
+- [ ] `src/gift-system/openrouter/WebSearchTool.ts`
+- [ ] `src/gift-system/openrouter/ToolDefinitions.ts`
+- [ ] `src/gift-system/ProactiveGenerator.ts` with MLX fallback
 - [ ] Unit tests for OpenRouter integration
 
 ---
 
-## Phase 3: Image Generation Pipeline (Days 6-7)
+## Phase 3: Image Generation (Day 4)
 
 ### Objectives
-- Complete image generation with Photos library integration
-- Local storage and organization
-- AppleScript Photos.app automation
+- Implement image generation pipeline
+- Add macOS Photos.app integration
+- Create local storage management
 
-### 3.1 Image Generation Tool
+### 3.1 Image Generator
 
-**File: `src/gift-system/openrouter/ImageGenerationTool.ts`**
+**File: `src/gift-system/image/ImageGenerator.ts`**
 ```typescript
 import fs from 'fs/promises';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { GeneratedImage } from '../types/index.js';
+import { GeneratedImage } from '../types.js';
 import logger from '../../utils/logger.js';
 
 const execAsync = promisify(exec);
 
-export class ImageGenerationTool {
+export class ImageGenerator {
   private apiKey: string;
   private model: string;
   private savePath: string;
   private photosAlbumName: string;
   private photosEnabled: boolean;
 
-  constructor(
-    apiKey: string,
-    model: string = 'black-forest-labs/flux-1.1-pro',
-    config: {
-      savePath?: string;
-      photosAlbumName?: string;
-      photosEnabled?: boolean;
-    } = {}
-  ) {
+  constructor(apiKey: string, config: {
+    model?: string;
+    savePath?: string;
+    photosAlbumName?: string;
+    photosEnabled?: boolean;
+  } = {}) {
     this.apiKey = apiKey;
-    this.model = model;
+    this.model = config.model || 'black-forest-labs/flux-1.1-pro';
     this.savePath = config.savePath || '~/Pictures/FamilyGifts';
     this.photosAlbumName = config.photosAlbumName || 'Family Gifts';
     this.photosEnabled = config.photosEnabled ?? true;
   }
 
-  /**
-   * Generate an image and save it locally, optionally adding to Photos
-   */
   async generate(
-    prompt: string,
+    stylePrompt: string,
     memberId: string,
     themeName: string,
     date: Date
   ): Promise<GeneratedImage> {
     logger.info('Generating image', { memberId, theme: themeName });
 
-    // Call OpenRouter image generation
+    // Generate via OpenRouter
     const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
       method: 'POST',
       headers: {
@@ -910,7 +1244,7 @@ export class ImageGenerationTool {
       },
       body: JSON.stringify({
         model: this.model,
-        prompt,
+        prompt: stylePrompt,
         n: 1,
         size: '1024x1024'
       })
@@ -923,7 +1257,7 @@ export class ImageGenerationTool {
     const result = await response.json();
     const imageData = result.data[0];
 
-    // Save the image locally
+    // Save locally
     const dateStr = date.toISOString().split('T')[0];
     const safeThemeName = themeName.replace(/\s+/g, '-').toLowerCase();
     const filename = `${dateStr}-${safeThemeName}.png`;
@@ -943,7 +1277,7 @@ export class ImageGenerationTool {
 
     logger.info('Image saved', { path: localPath });
 
-    // Import to Photos library
+    // Import to Photos
     let addedToPhotos = false;
     if (this.photosEnabled) {
       addedToPhotos = await this.importToPhotos(localPath);
@@ -951,7 +1285,7 @@ export class ImageGenerationTool {
 
     return {
       localPath,
-      prompt,
+      prompt: stylePrompt,
       model: this.model,
       timestamp: new Date(),
       addedToPhotos
@@ -969,18 +1303,11 @@ export class ImageGenerationTool {
       tell application "Photos"
         activate
         delay 1
-
-        -- Ensure album exists
         if not (exists album "${this.photosAlbumName}") then
           make new album named "${this.photosAlbumName}"
         end if
-
-        -- Import image
         set theImage to import POSIX file "${imagePath}"
-
-        -- Add to album
         add theImage to album "${this.photosAlbumName}"
-
         return "Success"
       end tell
     `;
@@ -998,68 +1325,67 @@ export class ImageGenerationTool {
 ```
 
 ### 3.2 Deliverables
-- [ ] ImageGenerationTool complete
-- [ ] Photos library AppleScript integration
-- [ ] Local storage with organized folder structure
-- [ ] Error handling and fallback behavior
+- [ ] `src/gift-system/image/ImageGenerator.ts`
+- [ ] `src/gift-system/image/PhotosLibrary.ts` (extracted AppleScript logic)
+- [ ] `src/gift-system/image/ImageStorage.ts` (cleanup, rotation)
+- [ ] Test image generation end-to-end
 
 ---
 
-## Phase 4: Scheduler & Content Generation (Days 8-10)
+## Phase 4: Scheduler & Integration (Days 5-6)
 
 ### Objectives
-- Implement node-schedule based scheduling
-- Create content generation pipeline
-- Build family-specific template system
+- Implement scheduling with node-schedule
+- Extend ChatbotHandler for family replies
+- Create unified entry point
 
 ### 4.1 Gift Scheduler
 
-**File: `src/gift-system/scheduler/GiftScheduler.ts`**
+**File: `src/gift-system/GiftScheduler.ts`**
 ```typescript
 import schedule, { Job } from 'node-schedule';
-import { FamilyMember, WeeklyTheme, DailyGiftResult } from '../types/index.js';
-import { ToolOrchestrator } from '../content/ToolOrchestrator.js';
-import { MessageService } from '../../services/MessageService.js';
-import logger from '../../utils/logger.js';
+import { FamilyMember, DayTheme, DailyGiftResult, GiftSystemConfig } from './types.js';
+import { ProactiveGenerator } from './ProactiveGenerator.js';
+import { ProfileLoader } from './config/ProfileLoader.js';
+import { MessageService } from '../services/MessageService.js';
+import logger from '../utils/logger.js';
 
 export class GiftScheduler {
   private jobs: Map<string, Job> = new Map();
-  private orchestrator: ToolOrchestrator;
+  private generator: ProactiveGenerator;
+  private profileLoader: ProfileLoader;
   private messageService: MessageService;
-  private familyMembers: FamilyMember[];
+  private config: GiftSystemConfig;
 
   constructor(
-    orchestrator: ToolOrchestrator,
+    generator: ProactiveGenerator,
+    profileLoader: ProfileLoader,
     messageService: MessageService,
-    familyMembers: FamilyMember[]
+    config: GiftSystemConfig
   ) {
-    this.orchestrator = orchestrator;
+    this.generator = generator;
+    this.profileLoader = profileLoader;
     this.messageService = messageService;
-    this.familyMembers = familyMembers;
+    this.config = config;
   }
 
-  /**
-   * Initialize all scheduled jobs for family members
-   */
-  async initialize(): Promise<void> {
-    logger.info('Initializing gift scheduler', { memberCount: this.familyMembers.length });
+  async start(): Promise<void> {
+    const members = await this.profileLoader.getEnabledMembers();
+    logger.info('Starting gift scheduler', { memberCount: members.length });
 
-    for (const member of this.familyMembers) {
-      if (!member.enabled) {
-        logger.debug(`Skipping disabled member: ${member.name}`);
-        continue;
-      }
-
+    for (const member of members) {
       this.scheduleForMember(member);
     }
 
-    logger.info('Gift scheduler initialized', { jobCount: this.jobs.size });
+    logger.info('Gift scheduler started', {
+      jobCount: this.jobs.size,
+      dryRun: this.config.dryRun
+    });
   }
 
   private scheduleForMember(member: FamilyMember): void {
     const [hour, minute] = member.sendTime.split(':').map(Number);
 
-    // Create cron-like schedule rule
     const rule = new schedule.RecurrenceRule();
     rule.hour = hour;
     rule.minute = minute;
@@ -1070,527 +1396,324 @@ export class GiftScheduler {
     });
 
     this.jobs.set(member.id, job);
-    logger.info(`Scheduled daily gift for ${member.name}`, {
+
+    const nextRun = job.nextInvocation();
+    logger.info(`Scheduled ${member.name}`, {
       time: member.sendTime,
-      timezone: member.timezone
+      timezone: member.timezone,
+      nextRun: nextRun?.toLocaleString()
     });
   }
 
-  /**
-   * Send the daily gift to a family member
-   */
   private async sendDailyGift(member: FamilyMember): Promise<DailyGiftResult> {
     const now = new Date();
-    const dayOfWeek = now.getDay();
+    const dayOfWeek = now.getDay().toString();
+    const theme = member.themes[dayOfWeek];
 
-    // Find today's theme
-    const theme = member.themes.find(t => t.dayOfWeek === dayOfWeek);
     if (!theme) {
       logger.warn(`No theme for ${member.name} on day ${dayOfWeek}`);
-      return {
-        familyMemberId: member.id,
-        scheduledTime: now,
-        sentTime: now,
-        theme: 'none',
-        content: { text: '', model: '', tokensUsed: 0, toolsInvoked: [] },
-        success: false,
-        error: 'No theme configured for today'
-      };
+      return this.createFailedResult(member, now, 'No theme configured');
     }
 
     try {
-      logger.info(`Generating daily gift for ${member.name}`, { theme: theme.themeName });
+      logger.info(`Generating gift for ${member.name}`, { theme: theme.name });
 
-      // Generate content with tools
-      const content = await this.orchestrator.generateDailyGift(member, theme, now);
+      const content = await this.generator.generate(member, theme, now);
+
+      // Dry run mode - log instead of send
+      if (this.config.dryRun) {
+        logger.info('DRY RUN - Would send message', {
+          to: member.name,
+          phone: member.phone,
+          text: content.text.substring(0, 100) + '...',
+          hasImage: !!content.image,
+          fallbackUsed: content.fallbackUsed
+        });
+        return this.createSuccessResult(member, now, theme.name, content);
+      }
+
+      // Test recipient override
+      const recipient = this.config.testRecipient || member.phone;
 
       // Send the message
       if (content.image) {
         await this.messageService.sendMediaMessage(
-          member.phone,
+          recipient,
           content.text,
           content.image.localPath
         );
       } else {
-        await this.messageService.sendMessage(member.phone, content.text);
+        await this.messageService.sendMessage(recipient, content.text);
       }
 
-      const result: DailyGiftResult = {
-        familyMemberId: member.id,
-        scheduledTime: now,
-        sentTime: new Date(),
-        theme: theme.themeName,
-        content,
-        success: true
-      };
-
-      logger.info(`Daily gift sent to ${member.name}`, {
-        theme: theme.themeName,
+      logger.info(`Gift sent to ${member.name}`, {
+        theme: theme.name,
         hasImage: !!content.image,
+        fallbackUsed: content.fallbackUsed,
         toolsUsed: content.toolsInvoked
       });
 
-      return result;
+      return this.createSuccessResult(member, now, theme.name, content);
 
     } catch (error) {
-      logger.error(`Failed to send daily gift to ${member.name}`, { error });
-
-      return {
-        familyMemberId: member.id,
-        scheduledTime: now,
-        sentTime: new Date(),
-        theme: theme.themeName,
-        content: { text: '', model: '', tokensUsed: 0, toolsInvoked: [] },
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+      logger.error(`Failed to send gift to ${member.name}`, { error });
+      return this.createFailedResult(member, now, error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
   /**
-   * Manually trigger a gift for testing
+   * Manual trigger for testing
    */
-  async triggerManual(memberId: string): Promise<DailyGiftResult> {
-    const member = this.familyMembers.find(m => m.id === memberId);
+  async triggerManual(memberId: string, options?: {
+    forceTheme?: string;
+    dryRun?: boolean;
+  }): Promise<DailyGiftResult> {
+    const member = await this.profileLoader.getMember(memberId);
     if (!member) {
-      throw new Error(`Family member not found: ${memberId}`);
+      throw new Error(`Member not found: ${memberId}`);
     }
-    return this.sendDailyGift(member);
+
+    const now = new Date();
+    const dayOfWeek = now.getDay().toString();
+    let theme = member.themes[dayOfWeek];
+
+    // Force theme override
+    if (options?.forceTheme) {
+      const forcedTheme = Object.values(member.themes).find(
+        t => t.name.toLowerCase().includes(options.forceTheme!.toLowerCase())
+      );
+      if (forcedTheme) theme = forcedTheme;
+    }
+
+    if (!theme) {
+      throw new Error(`No theme found for ${memberId}`);
+    }
+
+    // Temporarily override dry run
+    const originalDryRun = this.config.dryRun;
+    if (options?.dryRun !== undefined) {
+      this.config.dryRun = options.dryRun;
+    }
+
+    try {
+      return await this.sendDailyGift(member);
+    } finally {
+      this.config.dryRun = originalDryRun;
+    }
   }
 
   /**
-   * Get next scheduled time for a member
+   * Preview what would be sent (always dry run)
    */
+  async preview(memberId: string): Promise<DailyGiftResult> {
+    return this.triggerManual(memberId, { dryRun: true });
+  }
+
   getNextScheduledTime(memberId: string): Date | null {
     const job = this.jobs.get(memberId);
     return job?.nextInvocation() || null;
   }
 
-  /**
-   * Shutdown all scheduled jobs
-   */
+  getStatus(): { member: string; nextRun: string | null }[] {
+    const status: { member: string; nextRun: string | null }[] = [];
+    for (const [memberId, job] of this.jobs) {
+      status.push({
+        member: memberId,
+        nextRun: job.nextInvocation()?.toLocaleString() || null
+      });
+    }
+    return status;
+  }
+
   shutdown(): void {
     for (const [id, job] of this.jobs) {
       job.cancel();
-      logger.debug(`Cancelled job for ${id}`);
     }
     this.jobs.clear();
-    logger.info('Gift scheduler shutdown complete');
-  }
-}
-```
-
-### 4.2 Family Profiles Configuration
-
-**File: `src/gift-system/config/FamilyProfiles.ts`**
-```typescript
-import { FamilyMember } from '../types/index.js';
-
-export function loadFamilyProfiles(): FamilyMember[] {
-  return [
-    // ═══════════════════════════════════════════════════════════════════
-    // DAD (David) - Christianity, Nashville History, Recipes
-    // ═══════════════════════════════════════════════════════════════════
-    {
-      id: 'dad',
-      name: process.env.FAMILY_DAD_NAME || 'David',
-      phone: process.env.FAMILY_DAD_PHONE || '',
-      sendTime: process.env.FAMILY_DAD_SEND_TIME || '06:30',
-      timezone: process.env.FAMILY_DAD_TIMEZONE || 'America/Chicago',
-      interests: ['Christianity', 'Nashville history', 'Southern cooking', 'faith'],
-      imageEnabled: true,
-      webSearchEnabled: true,
-      enabled: process.env.FAMILY_DAD_ENABLED === 'true',
-
-      systemPrompt: `You are sending a warm, personalized morning message to David, a Christian man who loves his faith, Nashville history, and good food. Keep messages concise (2-4 sentences for devotionals, slightly longer for recipes/history). Be genuine, not preachy. When sharing scripture, include the reference. For recipes, give brief instructions that fit in a text message. Sign off warmly but not formally.
-
-You have access to web search - use it to find:
-- Current Bible verse of the day or relevant passages
-- Nashville historical events that happened on this date
-- Trending Southern recipes or seasonal ingredients`,
-
-      replySystemPrompt: `You are a warm, supportive AI assistant chatting with David. He loves discussing faith, Nashville history, and cooking. Keep responses conversational and genuine. If he asks about scripture, provide thoughtful interpretations. If he asks about recipes, give practical cooking advice.`,
-
-      themes: [
-        {
-          dayOfWeek: 1, // Monday
-          themeName: 'Morning Devotional',
-          description: 'Scripture verse + brief reflection',
-          promptTemplate: 'Create a Monday morning devotional for {name}. Search for an inspiring Bible verse appropriate for starting a new week, then write a brief, heartfelt reflection.',
-          imageStyle: 'serene sunrise landscape, spiritual, peaceful morning light',
-          includeImage: true,
-          includeWebSearch: true,
-          webSearchQuery: 'Bible verse for Monday morning encouragement'
-        },
-        {
-          dayOfWeek: 2, // Tuesday
-          themeName: 'Nashville History',
-          description: 'Historical fact or "on this day" moment',
-          promptTemplate: 'Share a fascinating Nashville history fact with {name}. Search for what happened on this date in Nashville history, or an interesting landmark story.',
-          imageStyle: 'historic Nashville photograph style, sepia tones, architectural',
-          includeImage: true,
-          includeWebSearch: true,
-          webSearchQuery: 'Nashville Tennessee history today in history OR famous landmark'
-        },
-        {
-          dayOfWeek: 3, // Wednesday
-          themeName: 'Recipe of the Day',
-          description: 'Easy weeknight Southern recipe',
-          promptTemplate: 'Share a delicious weeknight recipe with {name}. Search for a trending Southern comfort food recipe or seasonal dish.',
-          imageStyle: 'rustic Southern food photography, warm lighting, comfort food aesthetic',
-          includeImage: true,
-          includeWebSearch: true,
-          webSearchQuery: 'easy Southern recipe weeknight dinner'
-        },
-        {
-          dayOfWeek: 4, // Thursday
-          themeName: 'Encouragement + Psalm',
-          description: 'Uplifting verse for end of week push',
-          promptTemplate: 'Send {name} an encouraging message with a Psalm for Thursday. Search for an uplifting Psalm that speaks to perseverance.',
-          imageStyle: 'peaceful pastoral scene, warm golden light, hope',
-          includeImage: true,
-          includeWebSearch: true
-        },
-        {
-          dayOfWeek: 5, // Friday
-          themeName: 'Weekend Recipe',
-          description: 'Something special for Saturday/Sunday cooking',
-          promptTemplate: 'Suggest a weekend cooking project for {name}. Search for a special recipe perfect for weekend preparation.',
-          imageStyle: 'cozy kitchen scene, weekend cooking, family gathering',
-          includeImage: true,
-          includeWebSearch: true,
-          webSearchQuery: 'weekend recipe slow cooker OR special dinner'
-        },
-        {
-          dayOfWeek: 6, // Saturday
-          themeName: 'Nashville Landmark',
-          description: 'Deep dive on an iconic Nashville location',
-          promptTemplate: 'Tell {name} about a Nashville landmark. Search for interesting facts about the Ryman, Parthenon, Grand Ole Opry, or other iconic locations.',
-          imageStyle: 'Nashville architectural photography, dramatic lighting, iconic landmark',
-          includeImage: true,
-          includeWebSearch: true
-        },
-        {
-          dayOfWeek: 0, // Sunday
-          themeName: 'Sunday Reflection',
-          description: 'Thoughtful spiritual message for the Sabbath',
-          promptTemplate: 'Create a peaceful Sunday reflection for {name}. This is a day of rest and worship - share a meaningful passage and gentle reflection.',
-          imageStyle: 'stained glass light, church interior ambiance, sacred peaceful',
-          includeImage: true,
-          includeWebSearch: true
-        }
-      ]
-    },
-
-    // Additional family members follow same pattern...
-    // (Mom, Sister, Brother, Grandma - abbreviated for space)
-  ];
-}
-```
-
-### 4.3 Deliverables
-- [ ] GiftScheduler with cron-based timing
-- [ ] Family profiles configuration system
-- [ ] Theme-based content templates
-- [ ] Manual trigger capability for testing
-
----
-
-## Phase 5: Reply Handler with Local MLX (Days 11-12)
-
-### Objectives
-- Integrate local MLX-LM for reply handling
-- Create family context manager
-- Route incoming messages to local model
-
-### 5.1 Reply Handler
-
-**File: `src/gift-system/reply/ReplyHandler.ts`**
-```typescript
-import { FamilyMember } from '../types/index.js';
-import { FamilyContextManager } from './FamilyContextManager.js';
-import { MessageSync } from '../../services/MessageSync.js';
-import { MessageService } from '../../services/MessageService.js';
-import logger from '../../utils/logger.js';
-
-interface MLXGenerateRequest {
-  messages: Array<{ role: string; content: string }>;
-  max_tokens?: number;
-  temperature?: number;
-}
-
-export class ReplyHandler {
-  private mlxApiUrl: string;
-  private familyMembers: Map<string, FamilyMember>;
-  private contextManager: FamilyContextManager;
-  private messageService: MessageService;
-
-  constructor(
-    mlxApiUrl: string,
-    familyMembers: FamilyMember[],
-    messageService: MessageService
-  ) {
-    this.mlxApiUrl = mlxApiUrl;
-    this.familyMembers = new Map(familyMembers.map(m => [m.phone, m]));
-    this.contextManager = new FamilyContextManager();
-    this.messageService = messageService;
+    logger.info('Gift scheduler shutdown');
   }
 
-  /**
-   * Set up listener for incoming messages from family
-   */
-  setupListener(messageSync: MessageSync): void {
-    messageSync.on('new_message', async (message) => {
-      await this.handleIncomingMessage(message);
-    });
-    logger.info('Reply handler listening for family messages');
-  }
-
-  /**
-   * Handle an incoming message from a family member
-   */
-  private async handleIncomingMessage(message: ProcessedMessage): Promise<void> {
-    // Ignore our own messages
-    if (message.is_from_me) return;
-
-    const sender = message.handle || message.chat_identifier;
-
-    // Check if sender is a family member
-    const member = this.findFamilyMember(sender);
-    if (!member) {
-      logger.debug(`Ignoring message from non-family: ${sender}`);
-      return;
-    }
-
-    logger.info(`Processing reply from ${member.name}`, {
-      preview: message.text?.substring(0, 30)
-    });
-
-    try {
-      // Build context with recent conversation history
-      const context = this.contextManager.getContext(member.id);
-      context.push({ role: 'user', content: message.text || '' });
-
-      // Generate response via local MLX
-      const response = await this.generateLocalResponse(member, context);
-
-      // Update context with response
-      this.contextManager.addMessage(member.id, 'assistant', response);
-
-      // Send reply
-      await this.messageService.sendMessage(sender, response);
-      logger.info(`Sent reply to ${member.name}`);
-
-    } catch (error) {
-      logger.error(`Failed to process reply from ${member.name}`, { error });
-    }
-  }
-
-  private findFamilyMember(phone: string): FamilyMember | undefined {
-    // Check exact match or normalized versions
-    for (const [memberPhone, member] of this.familyMembers) {
-      if (phone.includes(memberPhone) || memberPhone.includes(phone)) {
-        return member;
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * Generate response using local MLX-LM model
-   */
-  private async generateLocalResponse(
+  private createSuccessResult(
     member: FamilyMember,
-    context: Array<{ role: string; content: string }>
-  ): Promise<string> {
-    const messages = [
-      { role: 'system', content: member.replySystemPrompt },
-      ...context
-    ];
-
-    const request: MLXGenerateRequest = {
-      messages,
-      max_tokens: 512,
-      temperature: 0.7
-    };
-
-    const response = await fetch(`${this.mlxApiUrl}/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request)
-    });
-
-    if (!response.ok) {
-      throw new Error(`MLX API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.response;
-  }
-}
-```
-
-### 5.2 Family Context Manager
-
-**File: `src/gift-system/reply/FamilyContextManager.ts`**
-```typescript
-interface ContextMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-}
-
-export class FamilyContextManager {
-  private contexts: Map<string, ContextMessage[]> = new Map();
-  private maxMessages: number;
-  private maxAgeHours: number;
-
-  constructor(maxMessages: number = 10, maxAgeHours: number = 24) {
-    this.maxMessages = maxMessages;
-    this.maxAgeHours = maxAgeHours;
-  }
-
-  /**
-   * Get conversation context for a family member
-   */
-  getContext(memberId: string): Array<{ role: string; content: string }> {
-    const context = this.contexts.get(memberId) || [];
-
-    // Filter out old messages
-    const cutoff = new Date(Date.now() - this.maxAgeHours * 60 * 60 * 1000);
-    const recentContext = context.filter(m => m.timestamp > cutoff);
-
-    // Take last N messages
-    const trimmed = recentContext.slice(-this.maxMessages);
-
-    return trimmed.map(m => ({ role: m.role, content: m.content }));
-  }
-
-  /**
-   * Add a message to the context
-   */
-  addMessage(memberId: string, role: 'user' | 'assistant', content: string): void {
-    if (!this.contexts.has(memberId)) {
-      this.contexts.set(memberId, []);
-    }
-
-    const context = this.contexts.get(memberId)!;
-    context.push({
-      role,
+    time: Date,
+    theme: string,
+    content: any
+  ): DailyGiftResult {
+    return {
+      familyMemberId: member.id,
+      memberName: member.name,
+      scheduledTime: time,
+      sentTime: new Date(),
+      theme,
       content,
-      timestamp: new Date()
-    });
-
-    // Trim to max size
-    if (context.length > this.maxMessages * 2) {
-      this.contexts.set(memberId, context.slice(-this.maxMessages));
-    }
+      success: true
+    };
   }
 
-  /**
-   * Clear context for a member (e.g., on /reset command)
-   */
-  clearContext(memberId: string): void {
-    this.contexts.delete(memberId);
-  }
-
-  /**
-   * Clear all contexts
-   */
-  clearAll(): void {
-    this.contexts.clear();
+  private createFailedResult(
+    member: FamilyMember,
+    time: Date,
+    error: string
+  ): DailyGiftResult {
+    return {
+      familyMemberId: member.id,
+      memberName: member.name,
+      scheduledTime: time,
+      sentTime: new Date(),
+      theme: 'none',
+      content: { text: '', model: '', tokensUsed: 0, toolsInvoked: [], fallbackUsed: false },
+      success: false,
+      error
+    };
   }
 }
 ```
 
-### 5.3 Deliverables
-- [ ] ReplyHandler integrated with MessageSync
-- [ ] FamilyContextManager for conversation state
-- [ ] Local MLX-LM generation for replies
-- [ ] Family phone number matching
+### 4.2 Unified Entry Point
 
----
-
-## Phase 6: Integration & Testing (Days 13-15)
-
-### Objectives
-- Integrate all components
-- Create main entry point
-- Comprehensive testing
-
-### 6.1 Main Entry Point
-
-**File: `src/gift-main.ts`**
+**File: `src/main.ts`**
 ```typescript
-import { GiftScheduler } from './gift-system/scheduler/GiftScheduler.js';
-import { ToolOrchestrator } from './gift-system/content/ToolOrchestrator.js';
-import { ReplyHandler } from './gift-system/reply/ReplyHandler.js';
-import { loadFamilyProfiles } from './gift-system/config/FamilyProfiles.js';
+import dotenv from 'dotenv';
+dotenv.config();
+
+import { ChatbotHandler } from './chatbot/ChatbotHandler.js';
+import { MessagePoller } from './chatbot/MessagePoller.js';
+import { MLXClient } from './chatbot/MLXClient.js';
 import { MessageService } from './services/MessageService.js';
-import { MessageSync } from './services/MessageSync.js';
+import { ConversationService } from './services/ConversationService.js';
+import { GiftScheduler } from './gift-system/GiftScheduler.js';
+import { ProactiveGenerator } from './gift-system/ProactiveGenerator.js';
+import { ProfileLoader } from './gift-system/config/ProfileLoader.js';
 import logger from './utils/logger.js';
 
 async function main() {
   logger.info('═══════════════════════════════════════════════════════════════');
-  logger.info('       FAMILY DAILY GIFT SYSTEM - STARTING                     ');
+  logger.info('       iMESSAGE AI SYSTEM - STARTING                           ');
   logger.info('═══════════════════════════════════════════════════════════════');
 
-  // Load configuration
-  const familyMembers = loadFamilyProfiles();
-  const enabledMembers = familyMembers.filter(m => m.enabled);
+  // Parse CLI args
+  const args = process.argv.slice(2);
+  const dryRun = args.includes('--dry-run');
+  const manual = args.includes('--manual');
+  const preview = args.includes('--preview');
+  const memberArg = args.find(a => a.startsWith('--member='));
+  const memberId = memberArg?.split('=')[1];
 
-  logger.info(`Loaded ${enabledMembers.length} family members`);
-  enabledMembers.forEach(m => {
-    logger.info(`  • ${m.name}: ${m.sendTime} ${m.timezone}`);
-  });
-
-  // Initialize services
+  // Shared services
   const messageService = new MessageService();
-  const messageSync = new MessageSync();
+  const conversationService = new ConversationService();
 
-  // Initialize OpenRouter orchestrator (for proactive messages)
-  const orchestrator = new ToolOrchestrator(
-    process.env.OPENROUTER_API_KEY || '',
-    process.env.WEB_SEARCH_API_KEY || '',
-    {
-      llmModel: process.env.OPENROUTER_LLM_MODEL || 'anthropic/claude-3.5-sonnet',
-      imageModel: process.env.OPENROUTER_IMAGE_MODEL || 'black-forest-labs/flux-1.1-pro',
-      webSearchProvider: (process.env.WEB_SEARCH_PROVIDER as any) || 'exa'
+  // Test Messages.app access
+  logger.info('Testing Messages.app access...');
+  const accessOk = await messageService.testAccess();
+  if (!accessOk) {
+    logger.error('Messages.app access failed. Check permissions.');
+    process.exit(1);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // CHATBOT MODE (Reactive)
+  // ═══════════════════════════════════════════════════════════════════
+  if (process.env.CHATBOT_ENABLED === 'true') {
+    logger.info('Initializing chatbot...');
+
+    const mlxClient = new MLXClient(process.env.MLX_API_URL || 'http://localhost:8000');
+
+    // Health check MLX
+    const mlxHealthy = await mlxClient.healthCheck();
+    if (!mlxHealthy) {
+      logger.error('MLX API not responding. Start it first: pm2 start mlx-api');
+      process.exit(1);
     }
-  );
 
-  // Initialize scheduler (proactive daily messages)
-  const scheduler = new GiftScheduler(orchestrator, messageService, enabledMembers);
-  await scheduler.initialize();
+    const poller = new MessagePoller();
+    const chatbot = new ChatbotHandler(poller, messageService, conversationService, mlxClient, {
+      enabled: true,
+      allowedContacts: (process.env.ALLOWED_CONTACTS || '').split(',').filter(Boolean),
+      systemPrompt: process.env.SYSTEM_PROMPT || 'You are a helpful AI assistant.',
+      maxContextMessages: parseInt(process.env.MAX_CONTEXT_MESSAGES || '10'),
+      maxTokens: parseInt(process.env.MAX_TOKENS || '512'),
+      temperature: parseFloat(process.env.TEMPERATURE || '0.7'),
+      responseCooldown: parseInt(process.env.RESPONSE_COOLDOWN || '2000')
+    });
 
-  // Initialize reply handler (local MLX for responses)
-  const replyHandler = new ReplyHandler(
-    process.env.MLX_API_URL || 'http://localhost:8000',
-    enabledMembers,
-    messageService
-  );
-  replyHandler.setupListener(messageSync);
+    await chatbot.start();
+    logger.info('Chatbot started');
+  }
 
-  // Start message sync
-  await messageSync.start();
+  // ═══════════════════════════════════════════════════════════════════
+  // GIFT SYSTEM MODE (Proactive)
+  // ═══════════════════════════════════════════════════════════════════
+  if (process.env.GIFT_SYSTEM_ENABLED === 'true') {
+    logger.info('Initializing gift system...');
+
+    const profileLoader = new ProfileLoader(
+      process.env.FAMILY_PROFILES_PATH || './config/family-profiles.json'
+    );
+
+    const generator = new ProactiveGenerator({
+      openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
+      openRouterModel: process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
+      webSearchProvider: (process.env.WEB_SEARCH_PROVIDER as any) || 'exa',
+      webSearchApiKey: process.env.WEB_SEARCH_API_KEY || '',
+      imageModel: process.env.IMAGE_MODEL || 'black-forest-labs/flux-1.1-pro',
+      imageSavePath: process.env.IMAGE_SAVE_PATH || '~/Pictures/FamilyGifts',
+      photosAlbumName: process.env.PHOTOS_ALBUM_NAME || 'Family Gifts',
+      photosEnabled: process.env.PHOTOS_ENABLED !== 'false',
+      promptsPath: process.env.PROMPTS_PATH || './prompts',
+      mlxApiUrl: process.env.MLX_API_URL || 'http://localhost:8000'
+    });
+
+    const scheduler = new GiftScheduler(generator, profileLoader, messageService, {
+      enabled: true,
+      profilesPath: process.env.FAMILY_PROFILES_PATH || './config/family-profiles.json',
+      promptsPath: process.env.PROMPTS_PATH || './prompts',
+      openRouterApiKey: process.env.OPENROUTER_API_KEY || '',
+      openRouterModel: process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
+      webSearchProvider: (process.env.WEB_SEARCH_PROVIDER as any) || 'exa',
+      webSearchApiKey: process.env.WEB_SEARCH_API_KEY || '',
+      imageModel: process.env.IMAGE_MODEL || 'black-forest-labs/flux-1.1-pro',
+      imageSavePath: process.env.IMAGE_SAVE_PATH || '~/Pictures/FamilyGifts',
+      photosAlbumName: process.env.PHOTOS_ALBUM_NAME || 'Family Gifts',
+      photosEnabled: process.env.PHOTOS_ENABLED !== 'false',
+      dryRun,
+      testRecipient: process.env.TEST_RECIPIENT
+    });
+
+    // Handle CLI commands
+    if (manual && memberId) {
+      logger.info(`Manual trigger for ${memberId}`);
+      const result = await scheduler.triggerManual(memberId);
+      logger.info('Result:', result);
+      process.exit(result.success ? 0 : 1);
+    }
+
+    if (preview && memberId) {
+      logger.info(`Preview for ${memberId}`);
+      const result = await scheduler.preview(memberId);
+      logger.info('Preview result:', result);
+      process.exit(0);
+    }
+
+    // Start scheduler for production
+    await scheduler.start();
+
+    // Log schedule
+    const status = scheduler.getStatus();
+    logger.info('Gift schedule:');
+    status.forEach(s => logger.info(`  ${s.member}: ${s.nextRun}`));
+
+    // Graceful shutdown
+    process.on('SIGINT', () => {
+      logger.info('Shutting down...');
+      scheduler.shutdown();
+      process.exit(0);
+    });
+  }
 
   logger.info('═══════════════════════════════════════════════════════════════');
-  logger.info('       FAMILY DAILY GIFT SYSTEM - RUNNING                      ');
+  logger.info('       iMESSAGE AI SYSTEM - RUNNING                            ');
   logger.info('═══════════════════════════════════════════════════════════════');
-
-  // Log next scheduled times
-  enabledMembers.forEach(m => {
-    const next = scheduler.getNextScheduledTime(m.id);
-    logger.info(`  ${m.name}: Next message at ${next?.toLocaleString()}`);
-  });
-
-  // Graceful shutdown
-  process.on('SIGINT', () => {
-    logger.info('Shutting down...');
-    scheduler.shutdown();
-    messageSync.stop();
-    process.exit(0);
-  });
 }
 
 main().catch(error => {
@@ -1599,56 +1722,41 @@ main().catch(error => {
 });
 ```
 
-### 6.2 Testing Strategy
+### 4.3 Update package.json Scripts
 
-| Test Type | Description | Tools |
-|-----------|-------------|-------|
-| Unit Tests | Individual component testing | Jest/Vitest |
-| Integration Tests | OpenRouter API, MLX API | Mock servers |
-| E2E Tests | Full message flow | Manual testing |
-| Load Testing | Concurrent generation | Artillery |
+```json
+{
+  "scripts": {
+    "build": "tsc && mkdir -p dist/applescript && cp src/applescript/*.applescript dist/applescript/",
+    "start": "NODE_ENV=production node dist/main.js",
+    "dev": "NODE_ENV=development LOG_LEVEL=debug node dist/main.js",
 
-### 6.3 Test Scenarios
-
-```typescript
-// test/gift-system.test.ts
-describe('Family Daily Gift System', () => {
-  describe('ToolOrchestrator', () => {
-    it('generates content with web search', async () => { /* ... */ });
-    it('generates content with image', async () => { /* ... */ });
-    it('handles web search failures gracefully', async () => { /* ... */ });
-  });
-
-  describe('GiftScheduler', () => {
-    it('schedules jobs for enabled members', async () => { /* ... */ });
-    it('uses correct timezone for each member', async () => { /* ... */ });
-    it('selects correct theme for day of week', async () => { /* ... */ });
-  });
-
-  describe('ReplyHandler', () => {
-    it('routes family replies to local MLX', async () => { /* ... */ });
-    it('ignores non-family messages', async () => { /* ... */ });
-    it('maintains conversation context', async () => { /* ... */ });
-  });
-});
+    "gift:start": "node dist/main.js",
+    "gift:dry-run": "node dist/main.js --dry-run",
+    "gift:preview": "node dist/main.js --preview --member=",
+    "gift:send": "node dist/main.js --manual --member=",
+    "gift:status": "node dist/main.js --status"
+  }
+}
 ```
 
-### 6.4 Deliverables
-- [ ] Main entry point with full integration
-- [ ] Unit test suite
-- [ ] Integration test suite
-- [ ] Manual test checklist
+### 4.4 Deliverables
+- [ ] `src/gift-system/GiftScheduler.ts`
+- [ ] `src/main.ts` (unified entry point)
+- [ ] Update `package.json` with new scripts
+- [ ] Extend `ChatbotHandler` for family member detection
+- [ ] CLI commands working
 
 ---
 
-## Phase 7: PM2 & Deployment (Days 16-17)
+## Phase 5: Testing & Deployment (Days 7-8)
 
 ### Objectives
-- Configure PM2 for process management
-- Set up auto-start on boot
-- Monitoring and logging
+- End-to-end testing
+- PM2 configuration
+- Production deployment
 
-### 7.1 PM2 Configuration
+### 5.1 Updated PM2 Configuration
 
 **File: `ecosystem.config.cjs`**
 ```javascript
@@ -1656,170 +1764,102 @@ const path = require('path');
 
 module.exports = {
   apps: [
-    // ═══════════════════════════════════════════════════════════════════
-    // MLX-LM API (Python FastAPI)
-    // ═══════════════════════════════════════════════════════════════════
+    // MLX-LM Python API (unchanged)
     {
       name: 'mlx-api',
-      script: 'uvicorn',
-      args: 'server:app --host 0.0.0.0 --port 8000',
+      script: 'venv/bin/python',
+      args: '-m uvicorn server:app --host 0.0.0.0 --port 8000',
       cwd: path.join(__dirname, 'mlx_api'),
-      interpreter: 'python3',
-
-      // Startup
-      wait_ready: true,
-      listen_timeout: 30000,
-
-      // Restart settings
+      interpreter: 'none',
+      env: {
+        MLX_MODEL: 'mlx-community/Llama-3.2-3B-Instruct-4bit',
+      },
       autorestart: true,
       max_restarts: 10,
+      min_uptime: '30s',
       restart_delay: 5000,
-
-      // Resources
-      max_memory_restart: '4G',
-
-      // Logging
+      max_memory_restart: '8G',
       error_file: path.join(__dirname, 'logs', 'mlx-api-error.log'),
       out_file: path.join(__dirname, 'logs', 'mlx-api-out.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-
-      // Environment
-      env: {
-        MLX_MODEL: 'mlx-community/Llama-3.2-3B-Instruct-4bit'
-      }
     },
 
-    // ═══════════════════════════════════════════════════════════════════
-    // FAMILY DAILY GIFT SYSTEM (TypeScript/Node.js)
-    // ═══════════════════════════════════════════════════════════════════
+    // Unified iMessage AI (Chatbot + Gift System)
     {
-      name: 'family-gift',
-      script: 'dist/gift-main.js',
+      name: 'imessage-ai',
+      script: 'dist/main.js',
       cwd: __dirname,
-
-      // Dependencies
-      depends_on: ['mlx-api'],
-
-      // Startup
-      wait_ready: true,
-
-      // Restart settings
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 5000,
-      cron_restart: '0 4 * * *',  // Daily restart at 4 AM
-
-      // Logging
-      error_file: path.join(__dirname, 'logs', 'family-gift-error.log'),
-      out_file: path.join(__dirname, 'logs', 'family-gift-out.log'),
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-
-      // Environment
+      interpreter: 'node',
+      node_args: '--experimental-specifier-resolution=node',
+      env_file: '.env',
       env: {
         NODE_ENV: 'production',
-        GIFT_SYSTEM_ENABLED: 'true'
-      }
-    }
-  ]
+        CHATBOT_ENABLED: 'true',
+        GIFT_SYSTEM_ENABLED: 'true',
+      },
+      wait_ready: true,
+      listen_timeout: 30000,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+      restart_delay: 3000,
+      cron_restart: '0 4 * * *',  // Daily restart at 4 AM
+      max_memory_restart: '500M',
+      depends_on: ['mlx-api'],
+      error_file: path.join(__dirname, 'logs', 'imessage-ai-error.log'),
+      out_file: path.join(__dirname, 'logs', 'imessage-ai-out.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    },
+  ],
 };
 ```
 
-### 7.2 Auto-Start Setup
+### 5.2 Testing Checklist
+
+**Self-Test (Day 1-2):**
+- [ ] Configure yourself as only family member
+- [ ] Run `npm run gift:preview -- --member=self`
+- [ ] Run `npm run gift:dry-run`
+- [ ] Run `npm run gift:send -- --member=self`
+- [ ] Verify message received
+- [ ] Verify image attached (if enabled)
+- [ ] Test reply handling
+
+**Family Rollout (Day 3+):**
+- [ ] Add Dad, test for 1-2 days
+- [ ] Add remaining family members
+- [ ] Monitor logs: `pm2 logs imessage-ai`
+- [ ] Check daily summary in logs
+
+### 5.3 Deployment Commands
 
 ```bash
-# Install PM2 globally
-npm install -g pm2
+# Build
+npm run build
 
-# Start the ecosystem
+# Start everything
 pm2 start ecosystem.config.cjs
-
-# Save process list
-pm2 save
-
-# Setup startup script (run at boot)
-pm2 startup
-
-# Verify status
-pm2 status
-pm2 logs family-gift --lines 50
-```
-
-### 7.3 Monitoring Dashboard
-
-```bash
-# Real-time monitoring
-pm2 monit
-
-# View logs
-pm2 logs family-gift --lines 100
-pm2 logs mlx-api --lines 100
 
 # Check status
 pm2 status
 
-# Restart if needed
-pm2 restart family-gift
+# View logs
+pm2 logs imessage-ai --lines 50
+
+# Manual test
+npm run gift:preview -- --member=dad
+npm run gift:send -- --member=dad
+
+# Save PM2 config for reboot
+pm2 save
+pm2 startup
 ```
 
-### 7.4 Deliverables
-- [ ] PM2 ecosystem configuration
-- [ ] Auto-start on boot setup
-- [ ] Logging configuration
-- [ ] Monitoring commands documented
-
----
-
-## Phase 8: Live Deployment (Day 18+)
-
-### Objectives
-- Deploy to Mac Mini
-- Gradual family member rollout
-- Monitor and iterate
-
-### 8.1 Pre-Deployment Checklist
-
-- [ ] Mac Mini has Full Disk Access for Terminal/app
-- [ ] Messages.app signed into Apple ID
-- [ ] OpenRouter API key configured and funded
-- [ ] Web search API key (Exa/Tavily) configured
-- [ ] Family phone numbers verified
-- [ ] Photos.app album created
-- [ ] All environment variables set
-- [ ] MLX model downloaded and tested
-- [ ] PM2 startup configured
-
-### 8.2 Rollout Strategy
-
-| Phase | Action | Duration |
-|-------|--------|----------|
-| 1 | Self-test (your number) | 3 days |
-| 2 | Add Dad | 3 days |
-| 3 | Add remaining family | Ongoing |
-| 4 | Gather feedback, iterate | Continuous |
-
-### 8.3 Success Metrics
-
-| Metric | Target |
-|--------|--------|
-| Daily message delivery rate | >99% |
-| Image generation success | >95% |
-| Reply response time | <5 seconds |
-| Web search enhancement rate | >80% |
-| System uptime | >99.9% |
-
-### 8.4 Daily Operations
-
-```bash
-# Morning check
-pm2 status
-pm2 logs family-gift --lines 20
-
-# View today's gifts sent
-grep "Daily gift sent" logs/family-gift-out.log | tail -5
-
-# Manual trigger for testing
-# (requires adding CLI command to gift-main.ts)
-```
+### 5.4 Deliverables
+- [ ] `ecosystem.config.cjs` updated
+- [ ] All tests passing
+- [ ] Self-test complete
+- [ ] Family rollout begun
 
 ---
 
@@ -1831,51 +1871,47 @@ grep "Daily gift sent" logs/family-gift-out.log | tail -5
 |---------|-------|------|
 | OpenRouter LLM (Claude) | ~150 messages | ~$3-5 |
 | OpenRouter Images (Flux) | ~150 images | ~$6 |
-| Web Search (Exa/Tavily) | ~100 searches | ~$0-5 |
+| Web Search (Exa) | ~100 searches | ~$0.10 |
 | **Total** | | **~$10-15/month** |
 
-### Cost Optimization Tips
+### Cost Optimization
 
-1. Use `flux-schnell` (free) for testing, `flux-1.1-pro` for production
-2. Cache web search results for repeated queries
-3. Skip images on some days if budget is tight
-4. Use local MLX for all replies (free)
+1. Use `flux-schnell` (free tier) for testing
+2. Skip images on some days/members
+3. Cache web search results
+4. Local MLX fallback is free
 
 ---
 
-## Appendix: Quick Reference
+## Quick Reference
 
-### Key File Locations
+### Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/gift-main.ts` | Main entry point |
-| `src/gift-system/scheduler/GiftScheduler.ts` | Scheduling orchestration |
-| `src/gift-system/content/ToolOrchestrator.ts` | OpenRouter + tools |
-| `src/gift-system/reply/ReplyHandler.ts` | Local MLX replies |
+| `src/main.ts` | Unified entry point |
+| `src/gift-system/GiftScheduler.ts` | Scheduling orchestration |
+| `src/gift-system/ProactiveGenerator.ts` | Content generation |
+| `config/family-profiles.json` | Family configuration |
+| `prompts/` | System prompt templates |
 | `ecosystem.config.cjs` | PM2 configuration |
-| `.env` | All configuration |
 
-### Quick Commands
+### CLI Commands
 
 ```bash
-# Start everything
+# Development
+npm run gift:preview -- --member=dad     # Preview without sending
+npm run gift:dry-run                      # Run scheduler in dry-run mode
+npm run gift:send -- --member=dad         # Send manually
+
+# Production
 pm2 start ecosystem.config.cjs
-
-# Check status
-pm2 status
-
-# View logs
-pm2 logs family-gift
-
-# Restart
-pm2 restart all
-
-# Stop
+pm2 logs imessage-ai
+pm2 restart imessage-ai
 pm2 stop all
 ```
 
 ---
 
-*Document Version: 1.0 | December 24, 2025*
-*Family Daily Gift System - Feature Roadmap*
+*Document Version: 2.0 | December 25, 2025*
+*Revised with unified architecture, JSON configuration, and external prompts*

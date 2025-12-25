@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "family-profiles.schema.json",
+  "title": "Family Profiles Configuration",
+  "description": "Configuration schema for the Family Daily Gift System",
+  "type": "object",
+  "required": ["version", "defaults", "familyMembers"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to this JSON schema"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Configuration version (semver format)"
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Default values applied to all family members",
+      "required": ["timezone", "imageEnabled", "webSearchEnabled", "proactiveEnabled"],
+      "properties": {
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone (e.g., 'America/Chicago')"
+        },
+        "imageEnabled": {
+          "type": "boolean",
+          "description": "Whether to generate images by default"
+        },
+        "webSearchEnabled": {
+          "type": "boolean",
+          "description": "Whether to enable web search by default"
+        },
+        "proactiveEnabled": {
+          "type": "boolean",
+          "description": "Whether proactive messages are enabled by default"
+        }
+      }
+    },
+    "familyMembers": {
+      "type": "array",
+      "description": "List of family member configurations",
+      "items": {
+        "$ref": "#/definitions/FamilyMember"
+      },
+      "minItems": 0
+    }
+  },
+  "definitions": {
+    "FamilyMember": {
+      "type": "object",
+      "required": ["id", "name", "phone", "sendTime", "timezone", "interests", "promptTemplate", "themes", "imageStyles"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-_]*$",
+          "description": "Unique identifier (lowercase, alphanumeric with dashes/underscores)"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name used in messages"
+        },
+        "phone": {
+          "type": "string",
+          "pattern": "^\\+[0-9]{10,15}$",
+          "description": "Phone number in E.164 format (e.g., '+15551234567')"
+        },
+        "sendTime": {
+          "type": "string",
+          "pattern": "^([01]?[0-9]|2[0-3]):[0-5][0-9]$",
+          "description": "Send time in 24-hour format (e.g., '06:30')"
+        },
+        "timezone": {
+          "type": "string",
+          "description": "IANA timezone (e.g., 'America/Chicago', 'America/Los_Angeles')"
+        },
+        "interests": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "List of interests for personalization"
+        },
+        "promptTemplate": {
+          "type": "string",
+          "description": "Directory name for prompt templates (e.g., 'dad' -> prompts/family/dad/)"
+        },
+        "themes": {
+          "type": "object",
+          "description": "Day-indexed themes (0=Sunday through 6=Saturday)",
+          "patternProperties": {
+            "^[0-6]$": {
+              "$ref": "#/definitions/DayTheme"
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
+        },
+        "imageStyles": {
+          "type": "object",
+          "description": "Image style prompts by template name",
+          "additionalProperties": { "type": "string" }
+        },
+        "proactiveEnabled": {
+          "type": "boolean",
+          "description": "Override: enable proactive messages (inherits from defaults if not set)"
+        },
+        "imageEnabled": {
+          "type": "boolean",
+          "description": "Override: enable image generation (inherits from defaults if not set)"
+        },
+        "webSearchEnabled": {
+          "type": "boolean",
+          "description": "Override: enable web search (inherits from defaults if not set)"
+        }
+      }
+    },
+    "DayTheme": {
+      "type": "object",
+      "required": ["name", "template"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name of the theme (e.g., 'Morning Devotional')"
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Template name to use (e.g., 'devotional' -> themes/devotional.hbs)"
+        },
+        "searchHint": {
+          "type": ["string", "null"],
+          "description": "Web search query hint. Null if no search needed."
+        }
+      }
+    }
+  }
+}
