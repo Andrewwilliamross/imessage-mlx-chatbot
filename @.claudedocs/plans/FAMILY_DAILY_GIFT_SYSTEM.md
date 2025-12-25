@@ -7,6 +7,33 @@ An extension to the iMessage MLX Chatbot that sends personalized daily messages 
 **Status:** Planning
 **Depends On:** Core iMessage MLX Chatbot (Phases 1-7)
 **Target Launch:** After core system is stable
+**Related:** [Feature Roadmap](./FAMILY_GIFT_FEATURE_ROADMAP.md) - Detailed phased implementation
+
+---
+
+## Dual-Model Architecture
+
+This system uses a **dual-model approach** to optimize for both capability and cost:
+
+| Message Type | Model | Provider | Capabilities | Cost |
+|--------------|-------|----------|--------------|------|
+| **Proactive Daily Messages** | Claude 3.5 Sonnet / GPT-4 | OpenRouter | Web search, image generation, tools | ~$0.02-0.10/msg |
+| **Reply Handling** | Llama-3.2-3B-Instruct-4bit | Local MLX | Fast, private, conversational | Free |
+
+### Why This Architecture?
+
+**Proactive Messages (OpenRouter):**
+- Rich content requiring real-time information (today's Nashville events, current Bible verse, trending recipes)
+- AI image generation for visual gifts
+- Tool access (web search) for dynamic, personalized content
+- Only 5 messages/day (one per family member) = controlled costs
+
+**Reply Handling (Local MLX):**
+- Fast response times (~1-3 seconds)
+- No API costs for ongoing conversations
+- Privacy for family conversations
+- Works offline if internet is down
+- Maintains conversation context per family member
 
 ---
 
@@ -55,6 +82,118 @@ An extension to the iMessage MLX Chatbot that sends personalized daily messages 
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
 └──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## OpenRouter Tool Integration
+
+### Web Search Capability
+
+The proactive daily messages leverage OpenRouter's tool-calling feature to enable real-time web search, making each message fresh and contextually relevant.
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                    PROACTIVE MESSAGE GENERATION FLOW                          │
+│                                                                               │
+│  ┌─────────────┐     ┌───────────────────────────────────────────────────┐   │
+│  │  Scheduler  │────▶│              OpenRouter API                       │   │
+│  │  triggers   │     │                                                   │   │
+│  │  at 6:30 AM │     │  ┌─────────────────────────────────────────────┐ │   │
+│  └─────────────┘     │  │  Claude 3.5 Sonnet (with tools)             │ │   │
+│                      │  │                                              │ │   │
+│                      │  │  Available Tools:                           │ │   │
+│                      │  │  ┌─────────────┐  ┌──────────────────────┐  │ │   │
+│                      │  │  │ web_search  │  │ generate_image       │  │ │   │
+│                      │  │  │             │  │                      │  │ │   │
+│                      │  │  │ Query:      │  │ Prompt:              │  │ │   │
+│                      │  │  │ "Nashville  │  │ "Serene sunrise      │  │ │   │
+│                      │  │  │  events     │  │  over Tennessee      │  │ │   │
+│                      │  │  │  today"     │  │  mountains..."       │  │ │   │
+│                      │  │  └──────┬──────┘  └──────────┬───────────┘  │ │   │
+│                      │  │         │                    │              │ │   │
+│                      │  └─────────┼────────────────────┼──────────────┘ │   │
+│                      │            │                    │                │   │
+│                      └────────────┼────────────────────┼────────────────┘   │
+│                                   │                    │                     │
+│                                   ▼                    ▼                     │
+│                      ┌────────────────────┐  ┌────────────────────────┐     │
+│                      │  Exa / Tavily API  │  │  Flux / DALL-E API     │     │
+│                      │  (Web Search)      │  │  (Image Generation)    │     │
+│                      └─────────┬──────────┘  └───────────┬────────────┘     │
+│                                │                         │                   │
+│                                └────────────┬────────────┘                   │
+│                                             │                                │
+│                                             ▼                                │
+│                      ┌───────────────────────────────────────────────────┐  │
+│                      │              Final Generated Content              │  │
+│                      │  • Personalized text with real-time info          │  │
+│                      │  • AI-generated image (optional)                  │  │
+│                      │  • Enriched with web search results               │  │
+│                      └───────────────────────────────────────────────────┘  │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Tool Definitions
+
+```typescript
+// Web Search Tool - enables real-time information retrieval
+const WEB_SEARCH_TOOL = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description: 'Search the web for current information. Use for: events, news, recipes, venues, Bible verses, historical facts.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The search query'
+        },
+        category: {
+          type: 'string',
+          enum: ['news', 'events', 'recipes', 'venues', 'general', 'religious'],
+          description: 'Category to help refine results'
+        },
+        location: {
+          type: 'string',
+          description: 'Location to localize results (e.g., "Nashville, TN")'
+        }
+      },
+      required: ['query']
+    }
+  }
+};
+```
+
+### Web Search Use Cases by Family Member
+
+| Member | Theme | Web Search Query Examples |
+|--------|-------|---------------------------|
+| **Dad** | Devotional | "Bible verse about strength {date}", "daily devotional reading" |
+| **Dad** | Nashville History | "Nashville history this day {month} {day}", "Grand Ole Opry history" |
+| **Dad** | Recipes | "Southern comfort food recipe {season}", "easy weeknight dinner" |
+| **Mom** | Music Venues | "Nashville live music tonight", "best listening rooms Nashville" |
+| **Mom** | Design | "interior design trends 2025", "cozy home styling tips" |
+| **Sister** | Travel | "bucket list destinations 2025", "affordable travel tips" |
+| **Sister** | Wellness | "morning wellness routine", "healthy quick breakfast" |
+| **Brother** | Architecture | "famous modern architecture", "Tadao Ando buildings" |
+| **Brother** | Fashion | "street fashion trends winter 2025", "workwear styling" |
+| **Grandma** | Gardening | "December garden tasks {region}", "winter garden planning" |
+| **Grandma** | Antiques | "antique valuables to look for", "vintage kitchen collectibles" |
+
+### Web Search Provider Configuration
+
+```bash
+# .env configuration
+WEB_SEARCH_PROVIDER=exa          # Options: exa, tavily, serp
+WEB_SEARCH_API_KEY=your-api-key
+
+# Provider comparison:
+# - Exa: Best semantic search, good for contextual queries ($0.001/search)
+# - Tavily: Fast, includes AI summaries ($0.01/search)
+# - SerpAPI: Google results, reliable ($0.001/search)
 ```
 
 ---
@@ -1401,5 +1540,14 @@ FAMILY_GRANDMA_IMAGES_ENABLED=true
 
 ---
 
-*Document Version: 1.0 | December 24, 2025*
-*A gift that keeps giving, powered by local AI*
+*Document Version: 2.0 | December 24, 2025*
+*A gift that keeps giving, powered by dual-model AI architecture*
+
+---
+
+## Document History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 2.0 | Dec 24, 2025 | Added dual-model architecture, OpenRouter tool integration, web search capability |
+| 1.0 | Dec 24, 2025 | Initial document with family profiles and image generation |
