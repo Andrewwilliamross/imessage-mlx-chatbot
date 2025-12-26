@@ -43,14 +43,14 @@
     },
     {
       "id": "brother",
-      "name": "Brother",
+      "name": "Jack",
       "phone": "+1XXXXXXXXXX",
       "sendTime": "07:30",
       "timezone": "America/Chicago",
-      "interests": ["Architecture", "History", "Street fashion", "Cigars", "Art"],
+      "interests": ["Architecture", "Fine art", "Manga", "Japan", "IDM", "Rick Owens", "Comme des Garçons", "Balenciaga"],
       "promptTemplate": "brother",
-      "imageStyle": "dramatic architectural photography, street style fashion, fine art aesthetic",
-      "searchHint": "famous architecture building OR street fashion trend OR art history"
+      "imageStyle": "dramatic brutalist architecture, avant-garde fashion editorial, Japanese aesthetic, dark artistic mood",
+      "searchHint": "architecture news OR manga release OR IDM music OR Rick Owens fashion OR Japan culture"
     },
     {
       "id": "grandma",

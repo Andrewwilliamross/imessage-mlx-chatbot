@@ -1,27 +1,34 @@
-# Brother's Proactive Message Template
+# Jack's Daily Gift
 
-You are sending a personalized morning message to {{name}}, who appreciates architecture, history, street fashion, cigars, and fine art.
+Send {{name}} their personalized morning message.
 
 ## Context
 
 - **Date:** {{dayOfWeek}}, {{fullDate}}
+- **Location:** Chicago, IL
 - **Interests:** {{join interests ", "}}
 
-{{#if webSearchEnabled}}
 ## Tools Available
 
-You have access to **web search**. Use it to find current, relevant information such as:
-- Notable architecture and buildings
-- Historical events and figures
-- Street fashion trends
-- Art movements and artists
-{{/if}}
+Use **web search** to gather:
+1. Current weather for Chicago
+2. One interesting fact related to his interests
+3. One recent news story related to his interests
 
-## Guidelines
+## Message Structure
 
-- Keep messages sophisticated but not pretentious
-- Match his appreciation for craftsmanship and detail
-- For architecture, highlight design philosophy
-- For fashion, focus on timeless style
-- Sign off casually, like a brother would
-- Let topics flow naturally - mix culture, style, and substance across the week
+Create a morning message with these sections:
+
+**1. Greeting**
+Good morning, wish them a great day.
+
+**2. Weather**
+Brief weather forecast for Chicago today (temperature, conditions).
+
+**3. Interesting Fact**
+One cool fact related to: Architecture, Fine art, Manga, Japan, IDM music, or high fashion (Rick Owens, CDG, Balenciaga). Make it a deep cut - something he might not know.
+
+**4. News**
+One recent news story related to his interests. Include what happened and why it's interesting.
+
+Keep the overall message friendly and concise. An AI-generated image will be attached based on the content.

@@ -13,7 +13,7 @@
  */
 
 import { ChatOpenAI } from '@langchain/openai';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { Serper } from '@langchain/community/tools/serper';
 import { createLogger } from '../../utils/logger.js';
 import { ImagePromptAgent } from './ImagePromptAgent.js';
@@ -210,26 +210,67 @@ export class DailyGiftAgent {
 
   /**
    * Parse Serper response into structured results
+   * Handles both raw JSON and LangChain's string response format
    */
   private parseSerperResponse(rawResponse: string): SerperSearchResult[] {
     try {
-      const data = JSON.parse(rawResponse);
+      // LangChain Serper tool returns a formatted string, not JSON
+      // Try to parse as JSON first
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(rawResponse);
+      } catch {
+        // If it's not JSON, it's likely LangChain's formatted string response
+        // Extract search results from the text format
+        logger.debug('Serper returned text format, extracting results', {
+          responsePreview: rawResponse.substring(0, 200),
+        });
+
+        // Parse text format: each result is typically on its own line
+        const results: SerperSearchResult[] = [];
+        const lines = rawResponse.split('\n').filter((l) => l.trim());
+
+        for (let i = 0; i < Math.min(lines.length, this.config.maxSearchResults); i++) {
+          const line = lines[i].trim();
+          if (line && !line.startsWith('Search results') && line.length > 10) {
+            results.push({
+              title: line.substring(0, 100),
+              link: '',
+              snippet: line,
+              position: i + 1,
+            });
+          }
+        }
+
+        return results;
+      }
+
+      // JSON format - check for organic results
       if (!data.organic) {
+        // Maybe it's a different structure
+        if (Array.isArray(data)) {
+          return (data as Array<{ title: string; link: string; snippet: string }>)
+            .slice(0, this.config.maxSearchResults)
+            .map((item, index) => ({
+              title: item.title || '',
+              link: item.link || '',
+              snippet: item.snippet || '',
+              position: index + 1,
+            }));
+        }
         return [];
       }
 
-      return data.organic
+      return (data.organic as Array<{ title: string; link: string; snippet: string }>)
         .slice(0, this.config.maxSearchResults)
-        .map(
-          (item: { title: string; link: string; snippet: string }, index: number) => ({
-            title: item.title,
-            link: item.link,
-            snippet: item.snippet,
-            position: index + 1,
-          })
-        );
-    } catch {
-      logger.warn('Failed to parse Serper response');
+        .map((item, index) => ({
+          title: item.title,
+          link: item.link,
+          snippet: item.snippet,
+          position: index + 1,
+        }));
+    } catch (error) {
+      logger.warn('Failed to parse Serper response', { error });
       return [];
     }
   }
@@ -286,10 +327,9 @@ export class DailyGiftAgent {
         new HumanMessage(userMessage),
       ]);
 
-      const generatedText =
-        typeof response.content === 'string'
-          ? response.content
-          : String(response.content);
+      // Extract the final text from various response formats
+      // Handles thinking models that separate reasoning from output
+      const generatedText = this.extractFinalText(response);
 
       logger.info('Text generation complete', {
         textLength: generatedText.length,
@@ -325,6 +365,71 @@ export class DailyGiftAgent {
    */
   private buildFallbackMessage(member: FamilyMember): string {
     return `Good morning, ${member.name}! Wishing you a wonderful day filled with joy and blessings.`;
+  }
+
+  /**
+   * Extract the final text from an LLM response
+   * Handles thinking models that may include reasoning in their response
+   */
+  private extractFinalText(response: AIMessage): string {
+    const content = response.content;
+
+    // Handle string content directly
+    if (typeof content === 'string') {
+      return this.cleanThinkingFromText(content);
+    }
+
+    // Handle array of content blocks (common with thinking models)
+    if (Array.isArray(content)) {
+      // Look for text blocks, skip thinking blocks
+      const textParts: string[] = [];
+
+      for (const block of content) {
+        if (typeof block === 'string') {
+          textParts.push(block);
+        } else if (typeof block === 'object' && block !== null) {
+          const blockObj = block as Record<string, unknown>;
+
+          // Skip thinking/reasoning blocks
+          if (blockObj.type === 'thinking' || blockObj.type === 'reasoning') {
+            continue;
+          }
+
+          // Extract text from text blocks
+          if (blockObj.type === 'text' && typeof blockObj.text === 'string') {
+            textParts.push(blockObj.text);
+          } else if (typeof blockObj.text === 'string') {
+            textParts.push(blockObj.text);
+          }
+        }
+      }
+
+      const combined = textParts.join('');
+      return this.cleanThinkingFromText(combined);
+    }
+
+    // Fallback: convert to string
+    return this.cleanThinkingFromText(String(content));
+  }
+
+  /**
+   * Remove inline thinking markers from text
+   * Some models include <thinking>...</thinking> or similar in their output
+   */
+  private cleanThinkingFromText(text: string): string {
+    // Remove <thinking>...</thinking> blocks
+    let cleaned = text.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+
+    // Remove <reason>...</reason> blocks
+    cleaned = cleaned.replace(/<reason>[\s\S]*?<\/reason>/gi, '');
+
+    // Remove [thinking]...[/thinking] blocks
+    cleaned = cleaned.replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '');
+
+    // Trim and clean up extra whitespace
+    cleaned = cleaned.trim().replace(/\n{3,}/g, '\n\n');
+
+    return cleaned;
   }
 
   /**
