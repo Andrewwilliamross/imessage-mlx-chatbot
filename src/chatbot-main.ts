@@ -10,8 +10,14 @@ import logger from './utils/logger.js';
 import { ChatbotHandler, ChatbotConfig, MessagePoller } from './chatbot/index.js';
 import MessageService from './services/MessageService.js';
 import ConversationService from './services/ConversationService.js';
+import { ProfileLoader } from './gift-system/config/ProfileLoader.js';
+import { PromptLoader } from './gift-system/config/PromptLoader.js';
 
-// Configuration from environment
+// Paths for profile and prompt loaders
+const profilesPath = process.env.FAMILY_PROFILES_PATH || './config/family-profiles.json';
+const promptsPath = process.env.PROMPTS_PATH || './prompts';
+
+// Configuration from environment (profileLoader and promptLoader will be added after initialization)
 const config: ChatbotConfig = {
   enabled: process.env.CHATBOT_ENABLED === 'true',
   mlxApiUrl: process.env.MLX_API_URL || 'http://localhost:8000',
@@ -27,6 +33,8 @@ const config: ChatbotConfig = {
   temperature: parseFloat(process.env.TEMPERATURE || '0.7'),
   requestTimeout: parseInt(process.env.MLX_REQUEST_TIMEOUT || '60000', 10),
   responseCooldown: parseInt(process.env.RESPONSE_COOLDOWN || '2000', 10),
+  profilesPath,
+  promptsPath,
 };
 
 async function main(): Promise<void> {
@@ -93,13 +101,43 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
+    // Initialize ProfileLoader for family member resolution
+    logger.info('Initializing ProfileLoader...');
+    let profileLoader: ProfileLoader | undefined;
+    try {
+      profileLoader = new ProfileLoader(profilesPath);
+      await profileLoader.load();
+      const members = await profileLoader.getAllMembers();
+      logger.info('ProfileLoader initialized', { membersLoaded: members.length });
+    } catch (error) {
+      logger.warn('Failed to load family profiles, personalization will be disabled', { error });
+    }
+
+    // Initialize PromptLoader for personalized reply prompts
+    logger.info('Initializing PromptLoader...');
+    let promptLoader: PromptLoader | undefined;
+    try {
+      promptLoader = new PromptLoader(promptsPath);
+      await promptLoader.load();
+      logger.info('PromptLoader initialized', { promptsPath });
+    } catch (error) {
+      logger.warn('Failed to initialize PromptLoader, personalization will be disabled', { error });
+    }
+
+    // Add loaders to config
+    const fullConfig: ChatbotConfig = {
+      ...config,
+      profileLoader,
+      promptLoader,
+    };
+
     // Initialize ChatbotHandler
     logger.info('Initializing ChatbotHandler...');
     const chatbot = new ChatbotHandler(
       messagePoller,
       messageService,
       conversationService,
-      config
+      fullConfig
     );
 
     // Start message polling

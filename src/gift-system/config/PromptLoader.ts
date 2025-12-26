@@ -6,6 +6,10 @@
  * - Template caching for performance
  * - Handlebars helpers for date formatting
  * - Graceful fallbacks for missing templates
+ *
+ * Note: Templates use .md extension but contain Handlebars syntax for variable
+ * interpolation. The markdown format makes prompts more readable while
+ * Handlebars handles dynamic content injection.
  */
 
 import fs from 'fs/promises';
@@ -250,7 +254,7 @@ export class PromptLoader implements ConfigLoader<Map<string, CompiledTemplate>>
 
       // Return a simple fallback template
       const fallback = Handlebars.compile(
-        'Generate a warm, personalized message for {{name}}. Today is {{dayOfWeek}}, {{fullDate}}. Theme: {{themeName}}.'
+        'Generate a warm, personalized message for {{name}}. Today is {{dayOfWeek}}, {{fullDate}}.'
       );
 
       return fallback;
@@ -272,11 +276,8 @@ export class PromptLoader implements ConfigLoader<Map<string, CompiledTemplate>>
     const correlationId = logger.generateCorrelationId();
 
     try {
-      // Register theme partial if it exists
-      await this.registerThemePartial(memberId, context.themeTemplate);
-
       // Load the main proactive template
-      const templatePath = `family/${memberId}/proactive.hbs`;
+      const templatePath = `family/${memberId}/proactive.md`;
       const template = await this.loadTemplate(templatePath);
 
       // Render with context
@@ -284,7 +285,6 @@ export class PromptLoader implements ConfigLoader<Map<string, CompiledTemplate>>
 
       logger.debug('Built proactive prompt', {
         memberId,
-        theme: context.themeName,
         promptLength: prompt.length,
         correlationId
       });
@@ -319,7 +319,7 @@ export class PromptLoader implements ConfigLoader<Map<string, CompiledTemplate>>
     }
 
     try {
-      const templatePath = `family/${memberId}/reply.hbs`;
+      const templatePath = `family/${memberId}/reply.md`;
       const template = await this.loadTemplate(templatePath);
 
       return template(context);
@@ -346,7 +346,7 @@ export class PromptLoader implements ConfigLoader<Map<string, CompiledTemplate>>
     }
 
     try {
-      const templatePath = `special/${occasionId}.hbs`;
+      const templatePath = `special/${occasionId}.md`;
       const template = await this.loadTemplate(templatePath);
 
       return template(context);
@@ -363,48 +363,12 @@ export class PromptLoader implements ConfigLoader<Map<string, CompiledTemplate>>
   }
 
   /**
-   * Register a theme-specific partial template
-   */
-  private async registerThemePartial(
-    memberId: string,
-    themeTemplate: string
-  ): Promise<void> {
-    const partialKey = `themes/${themeTemplate}`;
-
-    // Skip if already registered
-    if (this.partialCache.has(partialKey)) {
-      return;
-    }
-
-    const themePath = path.resolve(
-      this.resolvedPath || this.promptsPath,
-      `family/${memberId}/themes/${themeTemplate}.hbs`
-    );
-
-    try {
-      const themeContent = await fs.readFile(themePath, 'utf-8');
-      Handlebars.registerPartial(partialKey, themeContent);
-      this.partialCache.add(partialKey);
-
-      logger.debug('Registered theme partial', { memberId, themeTemplate });
-
-    } catch {
-      // Theme partial is optional - many prompts work without them
-      logger.debug('Theme partial not found (optional)', {
-        memberId,
-        themeTemplate
-      });
-    }
-  }
-
-  /**
    * Build a minimal fallback prompt when templates are missing
    */
   private buildFallbackPrompt(context: PromptContext): string {
     return `You are sending a warm, personalized morning message to ${context.name}.
 
 Today is ${context.dayOfWeek}, ${context.fullDate}.
-Theme: ${context.themeName}
 
 ${context.webSearchEnabled ? `You have access to web search. Consider searching for relevant, current information.` : ''}
 
@@ -480,17 +444,8 @@ Guidelines:
       const templates: string[] = [];
 
       for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith('.hbs')) {
-          templates.push(entry.name.replace('.hbs', ''));
-        } else if (entry.isDirectory() && entry.name === 'themes') {
-          // List theme templates
-          const themesDir = path.join(memberDir, 'themes');
-          const themeFiles = await fs.readdir(themesDir);
-          for (const themeFile of themeFiles) {
-            if (themeFile.endsWith('.hbs')) {
-              templates.push(`themes/${themeFile.replace('.hbs', '')}`);
-            }
-          }
+        if (entry.isFile() && entry.name.endsWith('.md')) {
+          templates.push(entry.name.replace('.md', ''));
         }
       }
 

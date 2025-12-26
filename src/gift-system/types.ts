@@ -14,21 +14,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Theme configuration for a specific day of the week
- * Each family member has 7 themes (one per day)
- */
-export interface DayTheme {
-  /** Display name of the theme (e.g., "Morning Devotional") */
-  name: string;
-  /** Template name to use for this theme (e.g., "devotional") */
-  template: string;
-  /** Web search query hint, null if no search needed */
-  searchHint: string | null;
-}
-
-/**
  * Family member profile as stored in family-profiles.json
- * This is the raw configuration before processing
+ * Simplified structure - no theme templates, just proactive.md and reply.md per user
  */
 export interface FamilyMemberConfig {
   /** Unique identifier (e.g., "dad", "mom") */
@@ -43,12 +30,12 @@ export interface FamilyMemberConfig {
   timezone: string;
   /** List of interests for personalization */
   interests: string[];
-  /** Directory name for prompt templates */
+  /** Directory name for prompt templates (prompts/family/{promptTemplate}/) */
   promptTemplate: string;
-  /** Day-indexed themes (key: "0"-"6" for Sun-Sat) */
-  themes: Record<string, DayTheme>;
-  /** Image style prompts by template name */
-  imageStyles: Record<string, string>;
+  /** Default image style prompt for this member */
+  imageStyle?: string;
+  /** Optional web search hint - if set, agent will research before generating */
+  searchHint?: string;
   /** Override: enable proactive messages (inherits from defaults if not set) */
   proactiveEnabled?: boolean;
   /** Override: enable image generation (inherits from defaults if not set) */
@@ -97,6 +84,7 @@ export interface FamilyProfilesConfig {
 
 /**
  * Context passed to Handlebars templates for prompt generation
+ * Simplified - no theme templates, just member profile and date context
  */
 export interface PromptContext {
   /** Family member's name */
@@ -105,10 +93,6 @@ export interface PromptContext {
   dayOfWeek: string;
   /** Full formatted date (e.g., "Monday, December 25, 2025") */
   fullDate: string;
-  /** Theme name for today */
-  themeName: string;
-  /** Template identifier */
-  themeTemplate: string;
   /** Whether web search is available/enabled */
   webSearchEnabled: boolean;
   /** Whether image generation is enabled */
@@ -289,6 +273,41 @@ export interface GeneratedContent {
   toolsInvoked: string[];
   /** Whether fallback to local MLX was used */
   fallbackUsed: boolean;
+}
+
+/**
+ * Generation options for content generation
+ */
+export interface ContentGenerationOptions {
+  /** Override the model */
+  model?: string;
+  /** Override max tokens */
+  maxTokens?: number;
+  /** Override temperature */
+  temperature?: number;
+  /** Skip web search */
+  skipWebSearch?: boolean;
+  /** Skip image generation */
+  skipImageGeneration?: boolean;
+  /** Force fallback to local MLX */
+  forceFallback?: boolean;
+}
+
+/**
+ * Content generator interface - abstracts ProactiveGenerator and AgentProactiveGenerator
+ * Allows GiftScheduler to work with either implementation
+ * Simplified - no theme required, just member profile
+ */
+export interface ContentGenerator {
+  /** Check if the generator is initialized */
+  isInitialized(): boolean;
+  /** Initialize the generator (load prompts, etc.) */
+  initialize(): Promise<void>;
+  /** Generate content for a family member */
+  generateContent(
+    member: FamilyMember,
+    options?: ContentGenerationOptions
+  ): Promise<GeneratedContent>;
 }
 
 /**

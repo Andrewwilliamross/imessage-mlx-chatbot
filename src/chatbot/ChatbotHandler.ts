@@ -9,6 +9,9 @@ import { EventEmitter } from 'events';
 import logger from '../utils/logger.js';
 import MLXClient from './MLXClient.js';
 import { ChatbotConfig, MLXMessage, ChatbotStats } from './types.js';
+import { ProfileLoader } from '../gift-system/config/ProfileLoader.js';
+import { PromptLoader } from '../gift-system/config/PromptLoader.js';
+import type { FamilyMember } from '../gift-system/types.js';
 
 // Import types from relay services
 interface ProcessedMessage {
@@ -49,6 +52,8 @@ export class ChatbotHandler {
   private stats: ChatbotStats;
   private lastResponseTime: Map<string, number> = new Map();
   private processingQueue: Set<string> = new Set();
+  private profileLoader: ProfileLoader | null = null;
+  private promptLoader: PromptLoader | null = null;
 
   constructor(
     messageSync: MessageSyncInterface,
@@ -62,6 +67,10 @@ export class ChatbotHandler {
     this.config = config;
 
     this.mlxClient = new MLXClient(config.mlxApiUrl, config.requestTimeout);
+
+    // Store profile and prompt loaders if provided
+    this.profileLoader = config.profileLoader ?? null;
+    this.promptLoader = config.promptLoader ?? null;
 
     this.stats = {
       messagesReceived: 0,
@@ -79,6 +88,8 @@ export class ChatbotHandler {
         mlxApiUrl: config.mlxApiUrl,
         allowedContacts: config.allowedContacts.length,
         maxContextMessages: config.maxContextMessages,
+        hasProfileLoader: !!this.profileLoader,
+        hasPromptLoader: !!this.promptLoader,
       });
     } else {
       logger.info('ChatbotHandler disabled by configuration');
@@ -153,14 +164,24 @@ export class ChatbotHandler {
     const startTime = Date.now();
 
     try {
+      // Resolve sender to family member for personalized responses
+      const member = await this.resolveMember(sender);
+
       logger.info('Processing message from whitelisted contact', {
         sender,
+        memberId: member?.id ?? 'unknown',
+        memberName: member?.name ?? 'unknown',
         textPreview: message.text.substring(0, 50),
         guid: message.guid,
       });
 
-      // Build context from conversation history
-      const context = this.buildContext(message.chat);
+      // Build context - use personalized prompt for family members
+      let context: MLXMessage[];
+      if (member) {
+        context = await this.buildPersonalizedContext(message.chat, member);
+      } else {
+        context = this.buildContext(message.chat);
+      }
 
       // Add the new message
       const messages: MLXMessage[] = [
@@ -225,6 +246,104 @@ export class ChatbotHandler {
   private normalizeContact(contact: string): string {
     // Remove all non-alphanumeric characters and lowercase
     return contact.replace(/[^a-zA-Z0-9@.]/g, '').toLowerCase();
+  }
+
+  /**
+   * Resolve a phone number to a family member using ProfileLoader
+   */
+  private async resolveMember(sender: string): Promise<FamilyMember | undefined> {
+    if (!this.profileLoader) {
+      return undefined;
+    }
+
+    try {
+      const member = await this.profileLoader.getMemberByPhone(sender);
+      if (member) {
+        logger.debug('Resolved sender to family member', {
+          sender,
+          memberId: member.id,
+          memberName: member.name,
+        });
+      }
+      return member;
+    } catch (error) {
+      logger.warn('Failed to resolve family member', { sender, error });
+      return undefined;
+    }
+  }
+
+  /**
+   * Build personalized context for a family member using their reply prompt
+   */
+  private async buildPersonalizedContext(
+    chatIdentifier: string,
+    member: FamilyMember
+  ): Promise<MLXMessage[]> {
+    // Build prompt context from member profile
+    const now = new Date();
+    const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+    const fullDate = now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    // Build full PromptContext as required by the type
+    const promptContext = {
+      name: member.name,
+      dayOfWeek,
+      fullDate,
+      webSearchEnabled: member.webSearchEnabled,
+      imageEnabled: member.imageEnabled,
+      interests: member.interests,
+      searchHint: member.searchHint,
+    };
+
+    let systemPrompt: string;
+
+    if (this.promptLoader) {
+      try {
+        systemPrompt = await this.promptLoader.buildReplyPrompt(member.id, promptContext);
+        logger.debug('Built personalized reply prompt', {
+          memberId: member.id,
+          promptLength: systemPrompt.length,
+        });
+      } catch (error) {
+        logger.warn('Failed to build personalized prompt, using fallback', {
+          memberId: member.id,
+          error,
+        });
+        systemPrompt = this.config.systemPrompt;
+      }
+    } else {
+      systemPrompt = this.config.systemPrompt;
+    }
+
+    const messages: MLXMessage[] = [{ role: 'system', content: systemPrompt }];
+
+    try {
+      const history = this.conversationService.getMessages(
+        chatIdentifier,
+        this.config.maxContextMessages
+      );
+
+      const contextMessages = history
+        .slice()
+        .reverse()
+        .slice(0, this.config.maxContextMessages - 1)
+        .map((msg): MLXMessage => ({
+          role: msg.isFromMe ? 'assistant' : 'user',
+          content: msg.text || '',
+        }))
+        .filter((msg) => msg.content.trim().length > 0);
+
+      messages.push(...contextMessages);
+    } catch (error) {
+      logger.warn('Failed to fetch conversation context', { error, chatIdentifier });
+    }
+
+    return messages;
   }
 
   /**

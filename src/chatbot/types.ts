@@ -2,6 +2,9 @@
  * Chatbot type definitions
  */
 
+import type { ProfileLoader } from '../gift-system/config/ProfileLoader.js';
+import type { PromptLoader } from '../gift-system/config/PromptLoader.js';
+
 export interface ChatbotConfig {
   /** URL of the MLX API server */
   mlxApiUrl: string;
@@ -9,7 +12,7 @@ export interface ChatbotConfig {
   /** List of allowed phone numbers/emails that can trigger responses */
   allowedContacts: string[];
 
-  /** System prompt for the AI */
+  /** System prompt for the AI (fallback if no family-specific prompt) */
   systemPrompt: string;
 
   /** Maximum number of previous messages to include as context */
@@ -29,6 +32,18 @@ export interface ChatbotConfig {
 
   /** Cooldown between responses to same contact in ms */
   responseCooldown: number;
+
+  /** Profile loader for resolving phone numbers to family members */
+  profileLoader?: ProfileLoader;
+
+  /** Prompt loader for building personalized prompts */
+  promptLoader?: PromptLoader;
+
+  /** Path to family profiles JSON (used when profileLoader not provided) */
+  profilesPath?: string;
+
+  /** Path to prompts directory (used when promptLoader not provided) */
+  promptsPath?: string;
 }
 
 export interface MLXMessage {

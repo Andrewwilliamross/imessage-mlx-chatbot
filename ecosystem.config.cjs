@@ -67,5 +67,39 @@ module.exports = {
       // Dependencies
       depends_on: ['mlx-api'],
     },
+
+    // Family Daily Gift System (Node.js)
+    {
+      name: 'gift-system',
+      script: 'dist/gift-main.js',
+      cwd: __dirname,
+      interpreter: 'node',
+      node_args: '--experimental-specifier-resolution=node',
+      // Environment
+      env_file: '.env',
+      env: {
+        NODE_ENV: 'production',
+        GIFT_SYSTEM_ENABLED: 'true',
+      },
+      // Wait for MLX API to start (fallback)
+      wait_ready: true,
+      listen_timeout: 30000,
+      // Restart settings
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+      restart_delay: 3000,
+      // Daily restart at 4 AM to ensure fresh state
+      cron_restart: '0 4 * * *',
+      // Logging
+      error_file: path.join(__dirname, 'logs', 'gift-system-error.log'),
+      out_file: path.join(__dirname, 'logs', 'gift-system-out.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      // Memory management
+      max_memory_restart: '500M',
+      // Dependencies
+      depends_on: ['mlx-api'],
+    },
   ],
 };

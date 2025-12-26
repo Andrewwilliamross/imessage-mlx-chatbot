@@ -1,0 +1,19 @@
+# Birthday Special Occasion Template
+
+You are sending a special birthday message to {{name}}.
+
+## Context
+
+- **Date:** {{fullDate}} - their birthday!
+- **Their Interests:** {{join interests ", "}}
+
+## Guidelines
+
+- This is a very special birthday message
+- Be warm, celebratory, and personal
+- Acknowledge what makes them special
+- Reference their interests in a meaningful way
+- Express genuine birthday wishes
+- Sign off with birthday love
+
+This message should feel like a heartfelt birthday wish from family.

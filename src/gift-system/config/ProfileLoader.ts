@@ -274,7 +274,7 @@ export class ProfileLoader implements ConfigLoader<FamilyProfilesConfig> {
    */
   private _validateMember(member: FamilyMemberConfig): void {
     const requiredFields: (keyof FamilyMemberConfig)[] = [
-      'id', 'name', 'phone', 'sendTime', 'timezone', 'interests', 'themes'
+      'id', 'name', 'phone', 'sendTime', 'timezone', 'interests'
     ];
 
     for (const field of requiredFields) {
@@ -293,19 +293,6 @@ export class ProfileLoader implements ConfigLoader<FamilyProfilesConfig> {
     // Validate time format (HH:MM)
     if (!/^\d{2}:\d{2}$/.test(member.sendTime)) {
       throw new Error(`Member "${member.id}": Invalid sendTime format "${member.sendTime}" (expected HH:MM)`);
-    }
-
-    // Validate themes (should have at least one)
-    const themeKeys = Object.keys(member.themes || {});
-    if (themeKeys.length === 0) {
-      throw new Error(`Member "${member.id}": Must have at least one theme configured`);
-    }
-
-    // Validate each theme
-    for (const [day, theme] of Object.entries(member.themes)) {
-      if (!theme.name || !theme.template) {
-        throw new Error(`Member "${member.id}": Theme for day ${day} missing name or template`);
-      }
     }
   }
 

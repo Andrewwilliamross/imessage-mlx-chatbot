@@ -16,20 +16,8 @@
       "timezone": "America/Chicago",
       "interests": ["Christianity", "Nashville history", "Southern cooking", "faith"],
       "promptTemplate": "dad",
-      "themes": {
-        "0": { "name": "Sunday Reflection", "template": "devotional", "searchHint": "Sunday morning devotional passage" },
-        "1": { "name": "Morning Devotional", "template": "devotional", "searchHint": "Bible verse Monday encouragement" },
-        "2": { "name": "Nashville History", "template": "history", "searchHint": "Nashville Tennessee history this day" },
-        "3": { "name": "Recipe of the Day", "template": "recipe", "searchHint": "Southern comfort food recipe easy" },
-        "4": { "name": "Encouragement + Psalm", "template": "devotional", "searchHint": "uplifting Psalm perseverance" },
-        "5": { "name": "Weekend Recipe", "template": "recipe", "searchHint": "weekend slow cooker recipe special" },
-        "6": { "name": "Nashville Landmark", "template": "history", "searchHint": "Ryman Grand Ole Opry Parthenon Nashville" }
-      },
-      "imageStyles": {
-        "devotional": "serene sunrise landscape, spiritual, peaceful morning light, Tennessee hills",
-        "history": "historic Nashville photograph, sepia tones, architectural landmark",
-        "recipe": "rustic Southern food photography, warm lighting, comfort food aesthetic"
-      }
+      "imageStyle": "serene sunrise landscape, spiritual, peaceful morning light, Tennessee hills",
+      "searchHint": "Bible verse encouragement OR Nashville history OR Southern recipe"
     },
     {
       "id": "mom",
@@ -39,20 +27,8 @@
       "timezone": "America/Chicago",
       "interests": ["Interior design", "Nashville music scene", "Live music venues", "Cozy home aesthetics"],
       "promptTemplate": "mom",
-      "themes": {
-        "0": { "name": "Cozy Home Moment", "template": "home", "searchHint": "hygge home Sunday relaxation" },
-        "1": { "name": "Design Tip", "template": "design", "searchHint": "interior design tip 2025" },
-        "2": { "name": "Nashville Music Pick", "template": "music", "searchHint": "Nashville live music tonight" },
-        "3": { "name": "Room Styling Idea", "template": "design", "searchHint": "room styling seasonal refresh" },
-        "4": { "name": "Hidden Gem Venue", "template": "music", "searchHint": "Nashville hidden gem bar listening room" },
-        "5": { "name": "Weekend Design Inspo", "template": "design", "searchHint": "weekend DIY design project" },
-        "6": { "name": "Nashville Event", "template": "music", "searchHint": "Nashville events this weekend" }
-      },
-      "imageStyles": {
-        "design": "beautiful interior design vignette, editorial style, warm lighting",
-        "music": "atmospheric Nashville music venue, neon lights, intimate concert",
-        "home": "hygge home moment, morning light through windows, cozy corner"
-      }
+      "imageStyle": "beautiful interior design vignette, editorial style, warm lighting, Nashville music venue",
+      "searchHint": "interior design tip 2025 OR Nashville live music OR cozy home aesthetic"
     },
     {
       "id": "sister",
@@ -62,24 +38,8 @@
       "timezone": "America/Los_Angeles",
       "interests": ["Travel", "Health foods", "Fitness", "Painting", "Media/Advertising"],
       "promptTemplate": "sister",
-      "themes": {
-        "0": { "name": "Self-Care Wellness", "template": "wellness", "searchHint": "Sunday self-care wellness routine" },
-        "1": { "name": "Monday Motivation", "template": "motivation", "searchHint": null },
-        "2": { "name": "Quick Healthy Recipe", "template": "health", "searchHint": "healthy quick breakfast recipe" },
-        "3": { "name": "Travel Bucket List", "template": "travel", "searchHint": "bucket list destination 2025 affordable" },
-        "4": { "name": "Ad/Media Insight", "template": "career", "searchHint": "advertising industry insight trend" },
-        "5": { "name": "Weekend Workout", "template": "fitness", "searchHint": "quick weekend workout routine" },
-        "6": { "name": "Creative Painting Prompt", "template": "art", "searchHint": null }
-      },
-      "imageStyles": {
-        "motivation": "empowering bold aesthetic, city skyline sunrise, energetic",
-        "health": "beautiful healthy food flat lay, bright colors, fresh ingredients",
-        "travel": "dream destination landscape, wanderlust, golden hour",
-        "career": "creative advertising art direction, modern bold design",
-        "fitness": "dynamic fitness movement, energy, determination",
-        "art": "abstract expressionist painting, bold brushstrokes, vibrant colors",
-        "wellness": "peaceful wellness scene, spa aesthetic, calm"
-      }
+      "imageStyle": "empowering bold aesthetic, healthy lifestyle, travel wanderlust, creative energy",
+      "searchHint": "healthy recipe quick OR travel destination 2025 OR advertising trend"
     },
     {
       "id": "brother",
@@ -89,22 +49,8 @@
       "timezone": "America/Chicago",
       "interests": ["Architecture", "History", "Street fashion", "Cigars", "Art"],
       "promptTemplate": "brother",
-      "themes": {
-        "0": { "name": "Design Philosophy", "template": "architecture", "searchHint": "famous architect quote philosophy" },
-        "1": { "name": "Architecture Spotlight", "template": "architecture", "searchHint": "famous modern architecture building" },
-        "2": { "name": "Street Fashion Intel", "template": "fashion", "searchHint": "street fashion trend winter 2025" },
-        "3": { "name": "Historical Moment", "template": "history", "searchHint": "interesting history this day" },
-        "4": { "name": "Cigar & Culture", "template": "culture", "searchHint": null },
-        "5": { "name": "Art Movement/Artist", "template": "art", "searchHint": "famous artist art movement" },
-        "6": { "name": "Weekend Look", "template": "fashion", "searchHint": "workwear fashion styling men" }
-      },
-      "imageStyles": {
-        "architecture": "dramatic architectural photography, black and white, sharp contrast",
-        "fashion": "street style fashion editorial, urban, sophisticated",
-        "history": "historic moment reimagined, artistic, dramatic",
-        "culture": "moody cigar lounge aesthetic, warm amber lighting",
-        "art": "fine art museum quality, contemplative, gallery"
-      }
+      "imageStyle": "dramatic architectural photography, street style fashion, fine art aesthetic",
+      "searchHint": "famous architecture building OR street fashion trend OR art history"
     },
     {
       "id": "grandma",
@@ -114,21 +60,8 @@
       "timezone": "America/Chicago",
       "interests": ["Baking", "Gardening", "Antiques"],
       "promptTemplate": "grandma",
-      "themes": {
-        "0": { "name": "Sweet Note", "template": "love", "searchHint": null },
-        "1": { "name": "Baking Tip", "template": "baking", "searchHint": "baking tip trick" },
-        "2": { "name": "Garden Seasonal", "template": "garden", "searchHint": "garden tasks this month" },
-        "3": { "name": "Antique Spotlight", "template": "antiques", "searchHint": "antique collectible history value" },
-        "4": { "name": "Classic Recipe", "template": "baking", "searchHint": "classic traditional recipe nostalgic" },
-        "5": { "name": "Weekend Garden Plan", "template": "garden", "searchHint": "weekend garden planning" },
-        "6": { "name": "Antique Hunting Tip", "template": "antiques", "searchHint": "antique hunting estate sale tips" }
-      },
-      "imageStyles": {
-        "baking": "warm farmhouse kitchen, fresh baked goods, afternoon sunlight",
-        "garden": "beautiful cottage garden, soft light, peaceful",
-        "antiques": "vintage antique still life, nostalgic, warm tones",
-        "love": "cozy grandmother's kitchen, warm, loving atmosphere"
-      }
+      "imageStyle": "warm farmhouse kitchen, cottage garden, vintage antique still life, nostalgic",
+      "searchHint": "baking tip OR garden seasonal advice OR antique collectible"
     }
   ]
 }
